@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhoPaid - Receipt Splitter</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=VT323&family=Special+Elite&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="app">
+        <!-- Header -->
+        <header class="receipt-header">
+            <div class="receipt-logo">
+                <div class="receipt-star">&#10038;</div>
+                <h1>WhoPaid</h1>
+                <p class="tagline">Split it. Send it. Sorted.</p>
+                <div class="receipt-star">&#10038;</div>
+            </div>
+            <div class="receipt-divider">- - - - - - - - - - - - - - - - - - - -</div>
+        </header>
+
+        <!-- Step 1: Upload -->
+        <section id="step-upload" class="step active">
+            <div class="step-number">STEP 1</div>
+            <h2>Upload Your Receipt</h2>
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-icon">&#128247;</div>
+                <p>Tap to take a photo or upload a receipt</p>
+                <p class="upload-hint">Supports JPG, PNG, HEIC</p>
+                <input type="file" id="receiptInput" accept="image/*" capture="environment" multiple>
+            </div>
+            <div id="imagePreviewContainer" class="image-preview-container hidden"></div>
+            <button id="processBtn" class="btn btn-primary hidden" disabled>
+                <span class="btn-text">Scan Receipt(s)</span>
+                <span class="btn-loading hidden">Scanning<span class="dots">...</span></span>
+            </button>
+            <div id="ocrProgress" class="ocr-progress hidden">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <p id="progressText">Initialising OCR engine...</p>
+            </div>
+        </section>
+
+        <!-- Step 2: Review Items -->
+        <section id="step-items" class="step hidden">
+            <div class="step-number">STEP 2</div>
+            <h2>Review Items</h2>
+            <p class="step-desc">Edit items, prices, and tax codes as needed. Costco tax codes: <strong>A</strong> = taxed, <strong>Z</strong> = non-taxed.</p>
+
+            <div class="tax-rate-bar">
+                <label for="taxRateInput">Tax Rate for code "A" items:</label>
+                <div class="tax-input-wrap">
+                    <input type="number" id="taxRateInput" value="20" min="0" max="100" step="0.1">
+                    <span>%</span>
+                </div>
+            </div>
+
+            <div class="items-list" id="itemsList">
+                <!-- Items populated by JS -->
+            </div>
+
+            <button id="addItemBtn" class="btn btn-secondary">+ Add Item Manually</button>
+
+            <div class="receipt-totals" id="receiptTotals">
+                <div class="receipt-divider">- - - - - - - - - - - - - - - - - - - -</div>
+                <div class="total-row">
+                    <span>Subtotal:</span>
+                    <span id="subtotalDisplay">£0.00</span>
+                </div>
+                <div class="total-row">
+                    <span>Tax (A items):</span>
+                    <span id="taxDisplay">£0.00</span>
+                </div>
+                <div class="total-row total-grand">
+                    <span>TOTAL:</span>
+                    <span id="totalDisplay">£0.00</span>
+                </div>
+                <div class="receipt-divider">- - - - - - - - - - - - - - - - - - - -</div>
+            </div>
+
+            <div class="step-nav">
+                <button id="backToUpload" class="btn btn-ghost">&larr; Back</button>
+                <button id="toAssign" class="btn btn-primary">Assign People &rarr;</button>
+            </div>
+        </section>
+
+        <!-- Step 3: Assign People -->
+        <section id="step-assign" class="step hidden">
+            <div class="step-number">STEP 3</div>
+            <h2>Who's Paying?</h2>
+            <p class="step-desc">Add people and assign items to each person.</p>
+
+            <div class="people-manager">
+                <div class="add-person-row">
+                    <input type="text" id="personNameInput" placeholder="Enter name..." maxlength="30">
+                    <button id="addPersonBtn" class="btn btn-secondary">+ Add</button>
+                </div>
+                <div class="people-tags" id="peopleTags">
+                    <!-- People tags populated by JS -->
+                </div>
+            </div>
+
+            <div class="assign-list" id="assignList">
+                <!-- Assignment rows populated by JS -->
+            </div>
+
+            <div class="step-nav">
+                <button id="backToItems" class="btn btn-ghost">&larr; Back</button>
+                <button id="toSummary" class="btn btn-primary">View Summary &rarr;</button>
+            </div>
+        </section>
+
+        <!-- Step 4: Summary & Share -->
+        <section id="step-summary" class="step hidden">
+            <div class="step-number">STEP 4</div>
+            <h2>Summary</h2>
+            <div class="receipt-divider">- - - - - - - - - - - - - - - - - - - -</div>
+
+            <div id="summaryContent">
+                <!-- Summary cards populated by JS -->
+            </div>
+
+            <div class="receipt-divider">- - - - - - - - - - - - - - - - - - - -</div>
+            <div class="receipt-footer-text">
+                <p>THANK YOU FOR SPLITTING!</p>
+                <p class="small">Powered by WhoPaid</p>
+            </div>
+
+            <div class="step-nav">
+                <button id="backToAssign" class="btn btn-ghost">&larr; Back</button>
+                <button id="startOver" class="btn btn-secondary">New Receipt</button>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="receipt-footer">
+            <div class="receipt-divider">= = = = = = = = = = = = = = = = = = = =</div>
+            <p>WhoPaid &copy; 2026 &bull; Receipt Splitter</p>
+        </footer>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
