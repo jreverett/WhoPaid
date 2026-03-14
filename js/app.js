@@ -241,7 +241,7 @@
             state.items = data.items || [];
             state.people = data.people || [];
             state.assignments = data.assignments || {};
-            state.taxRate = data.taxRate || 20;
+            state.taxRate = data.taxRate ?? 20;
             state.hasTaxCodes = data.hasTaxCodes || false;
             state.serviceCharge = data.serviceCharge || null;
             state.receiptId = id;
@@ -1081,8 +1081,9 @@ If you cannot read any items, return: { "hasTaxCodes": false, "serviceCharge": n
         renderSummary();
         showStep('step-summary');
 
-        // Save receipt to database (non-blocking)
-        saveReceipt();
+        // Save receipt to database and re-render to include URL in share messages
+        await saveReceipt();
+        renderSummary();
     });
 
     els.backToAssign.addEventListener('click', () => {
