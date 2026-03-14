@@ -64,6 +64,12 @@
                 </div>
                 <p id="progressText">Initialising OCR engine...</p>
             </div>
+
+            <div id="recentReceipts" class="recent-receipts hidden">
+                <h3>Recent Receipts</h3>
+                <ul id="recentList"></ul>
+                <button id="clearRecent" class="btn btn-ghost">Clear History</button>
+            </div>
         </section>
 
         <!-- Step 2: Review Items -->
@@ -154,6 +160,27 @@
             <div class="step-nav">
                 <button id="backToAssign" class="btn btn-ghost">&larr; Back</button>
                 <button id="startOver" class="btn btn-secondary">New Receipt</button>
+            </div>
+        </section>
+
+        <!-- Read-only View (for shared links) -->
+        <section id="step-view" class="step hidden">
+            <div class="step-number">SHARED RECEIPT</div>
+            <h2>Receipt Breakdown</h2>
+            <div class="receipt-divider">- - - - - - - - - - - - - - - - - - - -</div>
+
+            <div id="viewContent">
+                <!-- View-only summary populated by JS -->
+            </div>
+
+            <div class="receipt-divider">- - - - - - - - - - - - - - - - - - - -</div>
+            <div class="receipt-footer-text">
+                <p>THANK YOU FOR SPLITTING!</p>
+                <p class="small">Powered by WhoPaid</p>
+            </div>
+
+            <div class="view-actions">
+                <a href="/" class="btn btn-primary">Split Your Own Receipt</a>
             </div>
         </section>
 
