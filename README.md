@@ -1,6 +1,6 @@
 # WhoPaid
 
-[![Netlify Status](https://api.netlify.com/api/v1/badges/e64c873d-5dbe-41b8-8fda-5c936ee0c0fb/deploy-status)](https://app.netlify.com/sites/who-paid/deploys)
+[![Netlify Status](https://api.netlify.com/api/v1/badges/d35f0938-f976-4870-81f3-33db584bd654/deploy-status)](https://app.netlify.com/projects/who-paid/deploys)
 
 Receipt splitter app - upload a photo of your receipt, assign items to people, and send each person their share.
 
