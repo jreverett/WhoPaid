@@ -2,7 +2,7 @@ const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 
 // Bot/crawler user-agent patterns that need OG tags
 const CRAWLER_PATTERN =
-  /bot|crawl|spider|slurp|facebookexternalhit|Facebot|Twitterbot|LinkedInBot|WhatsApp|Slack|Telegram|Discord|iMessage|preview|embed|fetch|curl/i;
+  /bot|crawl|spider|slurp|facebookexternalhit|Facebot|Twitterbot|LinkedInBot|Slackbot|TelegramBot|Discordbot|iMessageBot|preview|embed|fetch|curl/i;
 
 export default async function handler(request, context) {
   const url = new URL(request.url);
