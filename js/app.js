@@ -12,6 +12,8 @@
         people: [],        // { id, name, color }
         assignments: {},   // itemId -> [personId, ...]
         taxRate: 20,       // default UK VAT
+        hasTaxCodes: false,
+        serviceCharge: null,
     };
 
     let itemIdCounter = 0;
@@ -21,6 +23,8 @@
         '#d4380d', '#1890ff', '#389e0d', '#722ed1',
         '#eb2f96', '#fa8c16', '#13c2c2', '#595959',
     ];
+
+    const STORAGE_KEY = 'whopaid_gemini_api_key';
 
     // ---- DOM REFS ----
     const $ = (sel) => document.querySelector(sel);
@@ -37,6 +41,8 @@
         itemsList: $('#itemsList'),
         addItemBtn: $('#addItemBtn'),
         taxRateInput: $('#taxRateInput'),
+        taxRateBar: $('#taxRateBar'),
+        itemsStepDesc: $('#itemsStepDesc'),
         subtotalDisplay: $('#subtotalDisplay'),
         taxDisplay: $('#taxDisplay'),
         totalDisplay: $('#totalDisplay'),
@@ -52,7 +58,68 @@
         toSummary: $('#toSummary'),
         backToAssign: $('#backToAssign'),
         startOver: $('#startOver'),
-    };
+        // Settings
+        settingsBtn: $('#settingsBtn'),
+        settingsModal: $('#settingsModal'),
+        apiKeyInput: $('#apiKeyInput'),
+        toggleKeyVisibility: $('#toggleKeyVisibility'),
+        saveSettings: $('#saveSettings'),
+        closeSettings: $('#closeSettings'),
+            };
+
+    // ---- SETTINGS ----
+    function getApiKey() {
+        return localStorage.getItem(STORAGE_KEY) || '';
+    }
+
+    function setApiKey(key) {
+        if (key) {
+            localStorage.setItem(STORAGE_KEY, key);
+        } else {
+            localStorage.removeItem(STORAGE_KEY);
+        }
+        updateSettingsButtonState();
+    }
+
+    function updateSettingsButtonState() {
+        if (getApiKey()) {
+            els.settingsBtn.classList.add('has-key');
+            els.settingsBtn.title = 'Settings (API key configured)';
+        } else {
+            els.settingsBtn.classList.remove('has-key');
+            els.settingsBtn.title = 'Settings';
+        }
+    }
+
+    function openSettings() {
+        els.apiKeyInput.value = getApiKey();
+        els.settingsModal.classList.remove('hidden');
+    }
+
+    function closeSettings() {
+        els.settingsModal.classList.add('hidden');
+    }
+
+    els.settingsBtn.addEventListener('click', openSettings);
+    els.closeSettings.addEventListener('click', closeSettings);
+    els.settingsModal.querySelector('.modal-backdrop').addEventListener('click', closeSettings);
+
+    els.saveSettings.addEventListener('click', () => {
+        setApiKey(els.apiKeyInput.value.trim());
+        closeSettings();
+    });
+
+    els.toggleKeyVisibility.addEventListener('click', () => {
+        const input = els.apiKeyInput;
+        if (input.type === 'password') {
+            input.type = 'text';
+        } else {
+            input.type = 'password';
+        }
+    });
+
+    // Initialize settings button state
+    updateSettingsButtonState();
 
     // ---- NAVIGATION ----
     function showStep(stepId) {
@@ -105,9 +172,150 @@
         });
     }
 
-    // ---- OCR ----
+    // ---- GEMINI API ----
+    async function listGeminiModels(apiKey) {
+        try {
+            const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
+            );
+            const data = await response.json();
+            console.log('Available Gemini models:', data);
+
+            // Filter for models that support generateContent
+            const generateModels = data.models?.filter(m =>
+                m.supportedGenerationMethods?.includes('generateContent')
+            ) || [];
+            console.log('Models supporting generateContent:', generateModels.map(m => m.name));
+
+            return generateModels;
+        } catch (err) {
+            console.error('Failed to list models:', err);
+            return [];
+        }
+    }
+
+    async function fileToBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                // Remove the data URL prefix to get just the base64 data
+                const base64 = reader.result.split(',')[1];
+                resolve(base64);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
+
+    async function extractItemsWithGemini(imageFile, apiKey) {
+        const base64Data = await fileToBase64(imageFile);
+        const mimeType = imageFile.type || 'image/jpeg';
+
+        const prompt = `You are a receipt parser. Analyze this receipt image and extract all purchased items.
+
+Return a JSON object with this exact format:
+{
+  "hasTaxCodes": true,
+  "serviceCharge": null,
+  "items": [
+    { "name": "PRODUCT NAME", "price": 12.99, "taxCode": "A" }
+  ]
+}
+
+Fields:
+- hasTaxCodes: true if receipt shows tax codes (like A/Z on Costco receipts), false otherwise
+- serviceCharge: if this is a restaurant receipt with a service charge/gratuity, include the amount as a number. Otherwise null
+- items: array of purchased items
+  - name: Product name (max 60 characters)
+  - price: Line total as a number (not unit price - use the final amount)
+  - taxCode: "A" for taxed, "Z" for non-taxed. Only include if hasTaxCodes is true
+
+Important:
+- Extract ONLY purchased items
+- EXCLUDE voided/refunded items
+- EXCLUDE totals, subtotals, tax lines, payment methods, change, headers, dates, addresses
+- EXCLUDE section headers like "Bottom of Basket", "BOB Count", etc.
+- If an item appears multiple times, include each as a separate entry
+- Return ONLY the JSON object - no markdown fences, no explanation
+
+If you cannot read any items, return: { "hasTaxCodes": false, "serviceCharge": null, "items": [] }`;
+
+        const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    contents: [
+                        {
+                            parts: [
+                                { text: prompt },
+                                {
+                                    inline_data: {
+                                        mime_type: mimeType,
+                                        data: base64Data,
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                    generationConfig: {
+                        temperature: 0.1,
+                        maxOutputTokens: 4096,
+                    },
+                }),
+            }
+        );
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            if (response.status === 400 && error.error?.message?.includes('API key')) {
+                throw new Error('Invalid API key. Please check your Gemini API key in settings.');
+            }
+            if (response.status === 403) {
+                throw new Error('API key not authorized. Please check your Gemini API key in settings.');
+            }
+            throw new Error(error.error?.message || `API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+
+        // Parse the JSON response (handle potential markdown fences)
+        let jsonStr = text.trim();
+        if (jsonStr.startsWith('```')) {
+            jsonStr = jsonStr.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
+        }
+
+        try {
+            const parsed = JSON.parse(jsonStr);
+            // Handle both old array format and new object format
+            if (Array.isArray(parsed)) {
+                return { hasTaxCodes: true, serviceCharge: null, items: parsed };
+            }
+            if (parsed && Array.isArray(parsed.items)) {
+                return parsed;
+            }
+            console.warn('Gemini returned unexpected format:', parsed);
+            return { hasTaxCodes: false, serviceCharge: null, items: [] };
+        } catch (e) {
+            console.error('Failed to parse Gemini response:', jsonStr);
+            return { hasTaxCodes: false, serviceCharge: null, items: [] };
+        }
+    }
+
+    // ---- PROCESS RECEIPTS ----
     els.processBtn.addEventListener('click', async () => {
         if (state.images.length === 0) return;
+
+        // Check for API key
+        const apiKey = getApiKey();
+        if (!apiKey) {
+            openSettings();
+            return;
+        }
 
         // UI: show loading
         els.processBtn.querySelector('.btn-text').classList.add('hidden');
@@ -115,36 +323,83 @@
         els.processBtn.disabled = true;
         els.ocrProgress.classList.remove('hidden');
 
-        const allText = [];
+        const allItems = [];
+        let detectedTaxCodes = false;
+        let totalServiceCharge = 0;
 
         for (let i = 0; i < state.images.length; i++) {
             els.progressText.textContent = `Scanning image ${i + 1} of ${state.images.length}...`;
+            els.progressFill.style.width = ((i + 0.5) / state.images.length) * 100 + '%';
 
             try {
-                const worker = await Tesseract.createWorker('eng', 1, {
-                    logger: (m) => {
-                        if (m.status === 'recognizing text') {
-                            const overall = ((i + m.progress) / state.images.length) * 100;
-                            els.progressFill.style.width = overall + '%';
-                        }
-                    },
-                });
+                const result = await extractItemsWithGemini(state.images[i].file, apiKey);
 
-                const { data } = await worker.recognize(state.images[i].file);
-                allText.push(data.text);
-                await worker.terminate();
+                if (result.hasTaxCodes) detectedTaxCodes = true;
+                if (result.serviceCharge) totalServiceCharge += parseFloat(result.serviceCharge) || 0;
+
+                result.items.forEach((item) => {
+                    allItems.push({
+                        id: ++itemIdCounter,
+                        name: String(item.name || '').substring(0, 60),
+                        price: parseFloat(item.price) || 0,
+                        taxCode: item.taxCode === 'A' ? 'A' : 'Z',
+                        qty: 1,
+                    });
+                });
             } catch (err) {
-                console.error('OCR error:', err);
-                allText.push('');
+                console.error('Gemini API error:', err);
+
+                // If model not found, list available models
+                if (err.message?.includes('not found')) {
+                    els.progressText.textContent = 'Model not found. Check console for available models.';
+                    listGeminiModels(apiKey);
+                } else {
+                    els.progressText.textContent = err.message || 'Error scanning receipt';
+                }
+
+                els.progressFill.style.width = '0%';
+                els.processBtn.querySelector('.btn-text').classList.remove('hidden');
+                els.processBtn.querySelector('.btn-loading').classList.add('hidden');
+                els.processBtn.disabled = false;
+                // Keep error visible until user taps progress area
+                els.ocrProgress.onclick = () => {
+                    els.ocrProgress.classList.add('hidden');
+                    els.ocrProgress.onclick = null;
+                };
+                return;
             }
         }
 
         els.progressFill.style.width = '100%';
         els.progressText.textContent = 'Processing complete!';
 
-        // Parse all text
-        const combinedText = allText.join('\n');
-        state.items = parseReceiptText(combinedText);
+        // Store items and detected settings
+        state.items = allItems;
+        state.hasTaxCodes = detectedTaxCodes;
+        state.serviceCharge = totalServiceCharge > 0 ? totalServiceCharge : null;
+
+        // Add service charge as an item if detected
+        if (state.serviceCharge) {
+            state.items.push({
+                id: ++itemIdCounter,
+                name: 'Service Charge',
+                price: state.serviceCharge,
+                taxCode: 'Z',
+                qty: 1,
+                isServiceCharge: true,
+            });
+        }
+
+        // If no items found, add a blank one
+        if (state.items.length === 0) {
+            state.items.push({
+                id: ++itemIdCounter,
+                name: '',
+                price: 0,
+                taxCode: 'Z',
+                qty: 1,
+            });
+        }
 
         // Reset UI
         setTimeout(() => {
@@ -160,86 +415,38 @@
         }, 600);
     });
 
-    // ---- PARSE RECEIPT TEXT ----
-    function parseReceiptText(text) {
-        const items = [];
-        const lines = text.split('\n');
-
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed) continue;
-
-            // Try various Costco-style receipt patterns
-            // Pattern: ITEM NAME    PRICE  TAX_CODE
-            // Common Costco formats:
-            //   ITEM NAME           1.23 A
-            //   ITEM NAME           1.23 Z
-            //   ITEM NAME      1.23A
-            //   ITEM NAME      1.23 Z
-
-            let match;
-
-            // Pattern 1: name ... price ... tax code (A or Z) at end
-            match = trimmed.match(/^(.+?)\s+([\d]+[.,]\d{2})\s*([AaZz])\s*$/);
-            if (!match) {
-                // Pattern 2: price with tax code directly attached
-                match = trimmed.match(/^(.+?)\s+([\d]+[.,]\d{2})([AaZz])\s*$/);
-            }
-            if (!match) {
-                // Pattern 3: name ... price (no tax code)
-                match = trimmed.match(/^(.+?)\s{2,}([\d]+[.,]\d{2})\s*$/);
-            }
-
-            if (match) {
-                const name = match[1].trim();
-                const priceStr = match[2].replace(',', '.');
-                const price = parseFloat(priceStr);
-                const taxCode = match[3] ? match[3].toUpperCase() : 'Z';
-
-                // Skip lines that look like totals, subtotals, tax lines, etc.
-                const skipWords = ['total', 'subtotal', 'sub total', 'tax', 'change', 'cash', 'card', 'visa', 'mastercard', 'debit', 'credit', 'balance', 'payment', 'amount'];
-                const lowerName = name.toLowerCase();
-                if (skipWords.some((w) => lowerName.includes(w))) continue;
-                if (price <= 0 || isNaN(price)) continue;
-
-                items.push({
-                    id: ++itemIdCounter,
-                    name: name.substring(0, 60),
-                    price: price,
-                    taxCode: taxCode,
-                    qty: 1,
-                });
-            }
-        }
-
-        // If no items found, add a blank one so user can manually enter
-        if (items.length === 0) {
-            items.push({
-                id: ++itemIdCounter,
-                name: '',
-                price: 0,
-                taxCode: 'Z',
-                qty: 1,
-            });
-        }
-
-        return items;
-    }
-
     // ---- RENDER ITEMS ----
     function renderItems() {
         els.itemsList.innerHTML = '';
+
+        // Show/hide tax code UI based on detection
+        if (state.hasTaxCodes) {
+            els.taxRateBar.style.display = '';
+            els.itemsStepDesc.textContent = 'Edit items, prices, and tax codes as needed. A = taxed, Z = non-taxed.';
+        } else {
+            els.taxRateBar.style.display = 'none';
+            els.itemsStepDesc.textContent = 'Edit items and prices as needed.';
+        }
+
+        // Add/remove class for tax code visibility
+        els.itemsList.classList.toggle('has-tax-codes', state.hasTaxCodes);
+
         state.items.forEach((item) => {
             const row = document.createElement('div');
-            row.className = 'item-row';
+            row.className = 'item-row' + (state.hasTaxCodes ? '' : ' no-tax');
             row.dataset.id = item.id;
-            row.innerHTML = `
-                <input type="text" class="item-name" value="${escapeHtml(item.name)}" placeholder="Item name">
-                <input type="number" class="item-price" value="${item.price.toFixed(2)}" step="0.01" min="0" placeholder="0.00">
+
+            const taxSelect = state.hasTaxCodes ? `
                 <select class="item-tax">
                     <option value="A" ${item.taxCode === 'A' ? 'selected' : ''}>A</option>
                     <option value="Z" ${item.taxCode === 'Z' ? 'selected' : ''}>Z</option>
                 </select>
+            ` : '';
+
+            row.innerHTML = `
+                <input type="text" class="item-name" value="${escapeHtml(item.name)}" placeholder="Item name">
+                <input type="number" class="item-price" value="${item.price.toFixed(2)}" step="0.01" min="0" placeholder="0.00">
+                ${taxSelect}
                 <button class="delete-item" title="Remove item">&times;</button>
             `;
             els.itemsList.appendChild(row);
@@ -265,16 +472,18 @@
             });
         });
 
-        els.itemsList.querySelectorAll('.item-tax').forEach((select) => {
-            select.addEventListener('change', (e) => {
-                const id = parseInt(e.target.closest('.item-row').dataset.id);
-                const item = state.items.find((i) => i.id === id);
-                if (item) {
-                    item.taxCode = e.target.value;
-                    updateTotals();
-                }
+        if (state.hasTaxCodes) {
+            els.itemsList.querySelectorAll('.item-tax').forEach((select) => {
+                select.addEventListener('change', (e) => {
+                    const id = parseInt(e.target.closest('.item-row').dataset.id);
+                    const item = state.items.find((i) => i.id === id);
+                    if (item) {
+                        item.taxCode = e.target.value;
+                        updateTotals();
+                    }
+                });
             });
-        });
+        }
 
         els.itemsList.querySelectorAll('.delete-item').forEach((btn) => {
             btn.addEventListener('click', (e) => {
@@ -654,6 +863,8 @@
         state.items = [];
         state.people = [];
         state.assignments = {};
+        state.hasTaxCodes = false;
+        state.serviceCharge = null;
         itemIdCounter = 0;
         personIdCounter = 0;
 
