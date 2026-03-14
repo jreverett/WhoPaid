@@ -427,11 +427,26 @@
         });
     }
 
-    async function extractItemsWithGemini(imageFile, apiKey) {
-        const base64Data = await fileToBase64(imageFile);
-        const mimeType = imageFile.type || 'image/jpeg';
+    async function extractItemsWithGemini(imageFiles, apiKey) {
+        // Convert all images to base64
+        const imageParts = await Promise.all(
+            imageFiles.map(async (file) => ({
+                inline_data: {
+                    mime_type: file.type || 'image/jpeg',
+                    data: await fileToBase64(file),
+                },
+            }))
+        );
 
-        const prompt = `You are a receipt parser. Analyze this receipt image and extract all purchased items.
+        const imageCount = imageFiles.length;
+        const prompt = `You are a receipt parser. Analyze ${imageCount === 1 ? 'this receipt image' : `these ${imageCount} images of the same receipt`} and extract all purchased items.
+
+${imageCount > 1 ? `IMPORTANT: These ${imageCount} images are photos of the SAME receipt, possibly:
+- Overlapping (same items visible in multiple photos)
+- Out of order (not photographed top-to-bottom)
+- Capturing different sections of a long receipt
+
+You must DEDUPLICATE items that appear in multiple images. Use item names, prices, and position context to identify duplicates.` : ''}
 
 Return a JSON object with this exact format:
 {
@@ -445,7 +460,7 @@ Return a JSON object with this exact format:
 Fields:
 - hasTaxCodes: true if receipt shows tax codes (like A/Z on Costco receipts), false otherwise
 - serviceCharge: if this is a restaurant receipt with a service charge/gratuity, include the amount as a number. Otherwise null
-- items: array of purchased items
+- items: array of purchased items (DEDUPLICATED if multiple images)
   - name: Product name (max 60 characters)
   - price: Line total as a number (not unit price - use the final amount)
   - taxCode: "A" for taxed, "Z" for non-taxed. Only include if hasTaxCodes is true
@@ -455,7 +470,8 @@ Important:
 - EXCLUDE voided/refunded items
 - EXCLUDE totals, subtotals, tax lines, payment methods, change, headers, dates, addresses
 - EXCLUDE section headers like "Bottom of Basket", "BOB Count", etc.
-- If an item appears multiple times, include each as a separate entry
+- If an item GENUINELY appears multiple times on the receipt (customer bought 2 of same item as separate lines), include each
+- But if the same item appears in multiple PHOTOS, only include it once
 - Return ONLY the JSON object - no markdown fences, no explanation
 
 If you cannot read any items, return: { "hasTaxCodes": false, "serviceCharge": null, "items": [] }`;
@@ -472,18 +488,13 @@ If you cannot read any items, return: { "hasTaxCodes": false, "serviceCharge": n
                         {
                             parts: [
                                 { text: prompt },
-                                {
-                                    inline_data: {
-                                        mime_type: mimeType,
-                                        data: base64Data,
-                                    },
-                                },
+                                ...imageParts,
                             ],
                         },
                     ],
                     generationConfig: {
                         temperature: 0.1,
-                        maxOutputTokens: 4096,
+                        maxOutputTokens: 8192,
                     },
                 }),
             }
@@ -543,55 +554,56 @@ If you cannot read any items, return: { "hasTaxCodes": false, "serviceCharge": n
         els.processBtn.disabled = true;
         els.ocrProgress.classList.remove('hidden');
 
-        const allItems = [];
-        let detectedTaxCodes = false;
-        let totalServiceCharge = 0;
+        const imageCount = state.images.length;
+        els.progressText.textContent = imageCount === 1
+            ? 'Scanning receipt...'
+            : `Scanning ${imageCount} images...`;
+        els.progressFill.style.width = '50%';
 
-        for (let i = 0; i < state.images.length; i++) {
-            els.progressText.textContent = `Scanning image ${i + 1} of ${state.images.length}...`;
-            els.progressFill.style.width = ((i + 0.5) / state.images.length) * 100 + '%';
+        let result;
+        try {
+            // Send all images in a single API call for deduplication
+            const imageFiles = state.images.map(img => img.file);
+            result = await extractItemsWithGemini(imageFiles, apiKey);
+        } catch (err) {
+            console.error('Gemini API error:', err);
 
-            try {
-                const result = await extractItemsWithGemini(state.images[i].file, apiKey);
-
-                if (result.hasTaxCodes) detectedTaxCodes = true;
-                if (result.serviceCharge) totalServiceCharge += parseFloat(result.serviceCharge) || 0;
-
-                result.items.forEach((item) => {
-                    allItems.push({
-                        id: ++itemIdCounter,
-                        name: String(item.name || '').substring(0, 60),
-                        price: parseFloat(item.price) || 0,
-                        taxCode: item.taxCode === 'A' ? 'A' : 'Z',
-                        qty: 1,
-                    });
-                });
-            } catch (err) {
-                console.error('Gemini API error:', err);
-
-                // If model not found, list available models
-                if (err.message?.includes('not found')) {
-                    els.progressText.textContent = 'Model not found. Check console for available models.';
-                    listGeminiModels(apiKey);
-                } else {
-                    els.progressText.textContent = err.message || 'Error scanning receipt';
-                }
-
-                els.progressFill.style.width = '0%';
-                els.processBtn.querySelector('.btn-text').classList.remove('hidden');
-                els.processBtn.querySelector('.btn-loading').classList.add('hidden');
-                els.processBtn.disabled = false;
-                // Keep error visible until user taps progress area
-                els.ocrProgress.onclick = () => {
-                    els.ocrProgress.classList.add('hidden');
-                    els.ocrProgress.onclick = null;
-                };
-                return;
+            // If model not found, list available models
+            if (err.message?.includes('not found')) {
+                els.progressText.textContent = 'Model not found. Check console for available models.';
+                listGeminiModels(apiKey);
+            } else {
+                els.progressText.textContent = err.message || 'Error scanning receipt';
             }
+
+            els.progressFill.style.width = '0%';
+            els.processBtn.querySelector('.btn-text').classList.remove('hidden');
+            els.processBtn.querySelector('.btn-loading').classList.add('hidden');
+            els.processBtn.disabled = false;
+            // Keep error visible until user taps progress area
+            els.ocrProgress.onclick = () => {
+                els.ocrProgress.classList.add('hidden');
+                els.ocrProgress.onclick = null;
+            };
+            return;
         }
 
         els.progressFill.style.width = '100%';
         els.progressText.textContent = 'Processing complete!';
+
+        const allItems = [];
+        result.items.forEach((item) => {
+            allItems.push({
+                id: ++itemIdCounter,
+                name: String(item.name || '').substring(0, 60),
+                price: parseFloat(item.price) || 0,
+                taxCode: item.taxCode === 'A' ? 'A' : 'Z',
+                qty: 1,
+            });
+        });
+
+        const detectedTaxCodes = result.hasTaxCodes;
+        const totalServiceCharge = parseFloat(result.serviceCharge) || 0;
 
         // Store items and detected settings
         state.hasTaxCodes = detectedTaxCodes;
