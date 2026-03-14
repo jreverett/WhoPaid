@@ -374,11 +374,14 @@ If you cannot read any items, return: { "hasTaxCodes": false, "serviceCharge": n
         els.progressText.textContent = 'Processing complete!';
 
         // Store items and detected settings
-        state.items = allItems;
         state.hasTaxCodes = detectedTaxCodes;
         state.serviceCharge = totalServiceCharge > 0 ? totalServiceCharge : null;
 
-        // Add service charge as an item if detected
+        // Filter out any service charge items Gemini may have included to avoid duplication
+        const serviceChargePattern = /service\s*charge|gratuity|tip/i;
+        state.items = allItems.filter(item => !serviceChargePattern.test(item.name));
+
+        // Add service charge as a single synthetic item if detected
         if (state.serviceCharge) {
             state.items.push({
                 id: ++itemIdCounter,
