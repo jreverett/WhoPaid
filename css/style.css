@@ -984,3 +984,80 @@ body {
     transform: translateX(-50%) translateY(0);
     opacity: 1;
 }
+
+/* ---- RECENT RECEIPTS ---- */
+.recent-receipts {
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px dashed var(--border);
+}
+
+.recent-receipts.hidden {
+    display: none;
+}
+
+.recent-receipts h3 {
+    font-family: var(--font-typewriter);
+    font-size: 1.1rem;
+    color: var(--ink-light);
+    margin-bottom: 0.75rem;
+}
+
+.recent-receipts ul {
+    list-style: none;
+    margin-bottom: 0.75rem;
+}
+
+.recent-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.35rem;
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-family: var(--font-receipt);
+    font-size: 1rem;
+}
+
+.recent-item a {
+    color: var(--accent);
+    text-decoration: none;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.recent-item a:hover {
+    text-decoration: underline;
+}
+
+.recent-date {
+    font-size: 0.9rem;
+    color: var(--ink-faint);
+    margin-left: 0.5rem;
+    white-space: nowrap;
+}
+
+/* ---- VIEW-ONLY MODE ---- */
+.view-actions {
+    display: flex;
+    justify-content: center;
+    margin-top: 1.5rem;
+}
+
+.view-actions .btn-primary {
+    width: auto;
+    text-decoration: none;
+}
+
+.summary-card.view-only {
+    background: var(--tag-bg);
+}
+
+.summary-card.view-only .summary-card-header {
+    border-bottom: 1px dashed var(--border);
+    padding-bottom: 0.5rem;
+}

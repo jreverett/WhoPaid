@@ -1,0 +1,9 @@
+{
+  "name": "whopaid",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Receipt Splitter App",
+  "dependencies": {
+    "@libsql/client": "^0.14.0"
+  }
+}

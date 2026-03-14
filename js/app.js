@@ -14,6 +14,7 @@
         taxRate: 20,       // default UK VAT
         hasTaxCodes: false,
         serviceCharge: null,
+        receiptId: null,   // GUID after saving
     };
 
     let itemIdCounter = 0;
@@ -25,6 +26,8 @@
     ];
 
     const STORAGE_KEY = 'whopaid_gemini_api_key';
+    const STORAGE_KEY_RECENT = 'recentReceipts';
+    const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 
     // ---- DOM REFS ----
     const $ = (sel) => document.querySelector(sel);
@@ -65,7 +68,13 @@
         toggleKeyVisibility: $('#toggleKeyVisibility'),
         saveSettings: $('#saveSettings'),
         closeSettings: $('#closeSettings'),
-            };
+        // Recent receipts
+        recentReceipts: $('#recentReceipts'),
+        recentList: $('#recentList'),
+        clearRecent: $('#clearRecent'),
+        // View mode
+        viewContent: $('#viewContent'),
+    };
 
     // ---- SETTINGS ----
     function getApiKey() {
@@ -120,6 +129,217 @@
 
     // Initialize settings button state
     updateSettingsButtonState();
+
+    // ---- RECEIPT PERSISTENCE ----
+    function getRecentReceipts() {
+        try {
+            const stored = localStorage.getItem(STORAGE_KEY_RECENT);
+            if (!stored) return [];
+            const receipts = JSON.parse(stored);
+            // Filter out expired receipts
+            const now = Date.now();
+            return receipts.filter(r => now - r.savedAt < FOURTEEN_DAYS_MS);
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function saveRecentReceipts(receipts) {
+        localStorage.setItem(STORAGE_KEY_RECENT, JSON.stringify(receipts.slice(0, 10)));
+    }
+
+    function addToRecentReceipts(id, label) {
+        const receipts = getRecentReceipts();
+        // Remove any existing entry with this ID
+        const filtered = receipts.filter(r => r.id !== id);
+        // Add new entry at the beginning
+        filtered.unshift({ id, savedAt: Date.now(), label });
+        saveRecentReceipts(filtered);
+        renderRecentReceipts();
+    }
+
+    function renderRecentReceipts() {
+        const receipts = getRecentReceipts();
+        if (receipts.length === 0) {
+            els.recentReceipts.classList.add('hidden');
+            return;
+        }
+
+        els.recentReceipts.classList.remove('hidden');
+        els.recentList.innerHTML = receipts.map(r => {
+            const date = new Date(r.savedAt).toLocaleDateString();
+            return `<li class="recent-item">
+                <a href="/r/${r.id}">${escapeHtml(r.label)}</a>
+                <span class="recent-date">${date}</span>
+            </li>`;
+        }).join('');
+    }
+
+    els.clearRecent.addEventListener('click', () => {
+        localStorage.removeItem(STORAGE_KEY_RECENT);
+        renderRecentReceipts();
+    });
+
+    async function saveReceipt() {
+        // Build a label for the receipt
+        const peopleCount = state.people.length;
+        const firstItem = state.items.find(i => i.name) || { name: 'Receipt' };
+        const label = `${firstItem.name.substring(0, 20)} - ${peopleCount} ${peopleCount === 1 ? 'person' : 'people'}`;
+
+        // Prepare state data for saving (exclude images)
+        const saveData = {
+            items: state.items,
+            people: state.people,
+            assignments: state.assignments,
+            taxRate: state.taxRate,
+            hasTaxCodes: state.hasTaxCodes,
+            serviceCharge: state.serviceCharge,
+        };
+
+        try {
+            const response = await fetch('/api/receipts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(saveData),
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to save receipt');
+            }
+
+            const result = await response.json();
+            state.receiptId = result.id;
+
+            // Update URL without reload
+            window.history.pushState({}, '', `/r/${result.id}`);
+
+            // Add to recent receipts
+            addToRecentReceipts(result.id, label);
+
+            return result.id;
+        } catch (error) {
+            console.error('Failed to save receipt:', error);
+            // Non-blocking - receipt sharing still works without persistence
+            return null;
+        }
+    }
+
+    async function loadSharedReceipt(id) {
+        try {
+            const response = await fetch(`/api/receipts/${id}`);
+            if (!response.ok) {
+                if (response.status === 404) {
+                    showToast('Receipt not found or expired');
+                }
+                return false;
+            }
+
+            const result = await response.json();
+            const data = result.data;
+
+            // Populate state from saved data
+            state.items = data.items || [];
+            state.people = data.people || [];
+            state.assignments = data.assignments || {};
+            state.taxRate = data.taxRate ?? 20;
+            state.hasTaxCodes = data.hasTaxCodes || false;
+            state.serviceCharge = data.serviceCharge || null;
+            state.receiptId = id;
+
+            // Update counters to avoid ID conflicts
+            itemIdCounter = Math.max(0, ...state.items.map(i => i.id));
+            personIdCounter = Math.max(0, ...state.people.map(p => p.id));
+
+            return true;
+        } catch (error) {
+            console.error('Failed to load receipt:', error);
+            showToast('Failed to load receipt');
+            return false;
+        }
+    }
+
+    function renderViewOnlySummary() {
+        els.viewContent.innerHTML = '';
+
+        // Calculate each person's share
+        state.people.forEach((person) => {
+            const personItems = [];
+            let personSubtotal = 0;
+            let personTax = 0;
+
+            state.items.forEach((item) => {
+                if (!state.assignments[item.id] || !state.assignments[item.id].includes(person.id)) return;
+
+                const splitCount = state.assignments[item.id].length;
+                const share = item.price / splitCount;
+                const shareTax = item.taxCode === 'A' ? share * (state.taxRate / 100) : 0;
+
+                personItems.push({
+                    name: item.name || 'Unnamed item',
+                    share: share,
+                    splitCount: splitCount,
+                });
+
+                personSubtotal += share;
+                personTax += shareTax;
+            });
+
+            const personTotal = personSubtotal + personTax;
+
+            const card = document.createElement('div');
+            card.className = 'summary-card view-only';
+            card.innerHTML = `
+                <div class="summary-card-header">
+                    <span class="summary-person-name" style="color:${person.color}">${escapeHtml(person.name)}</span>
+                    <span class="summary-person-total">${formatPrice(personTotal)}</span>
+                </div>
+                <div class="summary-items">
+                    ${personItems
+                        .map(
+                            (pi) => `
+                        <div class="s-item">
+                            <span>${escapeHtml(pi.name)}${pi.splitCount > 1 ? ` <span class="s-item-shared">(split ${pi.splitCount} ways)</span>` : ''}</span>
+                            <span>${formatPrice(pi.share)}</span>
+                        </div>
+                    `
+                        )
+                        .join('')}
+                    ${
+                        personTax > 0
+                            ? `<div class="s-item s-tax-line">
+                            <span>Tax</span>
+                            <span>${formatPrice(personTax)}</span>
+                        </div>`
+                            : ''
+                    }
+                </div>
+            `;
+
+            els.viewContent.appendChild(card);
+        });
+    }
+
+    // Check for shared receipt URL on page load
+    async function checkForSharedReceipt() {
+        const path = window.location.pathname;
+        const match = path.match(/^\/r\/([a-f0-9-]+)$/i);
+
+        if (match) {
+            const receiptId = match[1];
+            const loaded = await loadSharedReceipt(receiptId);
+
+            if (loaded) {
+                renderViewOnlySummary();
+                showStep('step-view');
+            } else {
+                // Receipt not found, show upload page
+                showStep('step-upload');
+            }
+        } else {
+            // Normal flow - show recent receipts
+            renderRecentReceipts();
+        }
+    }
 
     // ---- NAVIGATION ----
     function showStep(stepId) {
@@ -785,6 +1005,13 @@ If you cannot read any items, return: { "hasTaxCodes": false, "serviceCharge": n
 
         const total = personSubtotal + personTax;
         lines.push(`\nTotal: ${formatPrice(total)}`);
+
+        // Add link to full breakdown if we have a receipt ID
+        if (state.receiptId) {
+            const baseUrl = window.location.origin;
+            lines.push(`\nView full breakdown: ${baseUrl}/r/${state.receiptId}`);
+        }
+
         lines.push('\nCheers!');
 
         return lines.join('\n');
@@ -846,13 +1073,17 @@ If you cannot read any items, return: { "hasTaxCodes": false, "serviceCharge": n
         showStep('step-items');
     });
 
-    els.toSummary.addEventListener('click', () => {
+    els.toSummary.addEventListener('click', async () => {
         if (state.people.length === 0) {
             showToast('Please add at least one person before continuing.');
             return;
         }
         renderSummary();
         showStep('step-summary');
+
+        // Save receipt to database and re-render to include URL in share messages
+        await saveReceipt();
+        renderSummary();
     });
 
     els.backToAssign.addEventListener('click', () => {
@@ -869,8 +1100,12 @@ If you cannot read any items, return: { "hasTaxCodes": false, "serviceCharge": n
         state.assignments = {};
         state.hasTaxCodes = false;
         state.serviceCharge = null;
+        state.receiptId = null;
         itemIdCounter = 0;
         personIdCounter = 0;
+
+        // Reset URL to root
+        window.history.pushState({}, '', '/');
 
         // Reset UI
         els.imagePreviewContainer.innerHTML = '';
@@ -878,6 +1113,7 @@ If you cannot read any items, return: { "hasTaxCodes": false, "serviceCharge": n
         els.processBtn.classList.add('hidden');
         els.receiptInput.value = '';
 
+        renderRecentReceipts();
         showStep('step-upload');
     });
 
@@ -925,4 +1161,7 @@ If you cannot read any items, return: { "hasTaxCodes": false, "serviceCharge": n
         div.textContent = str;
         return div.innerHTML;
     }
+
+    // Initialize - check for shared receipt URL
+    checkForSharedReceipt();
 })();
