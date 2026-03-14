@@ -4,6 +4,10 @@
 [functions]
   directory = "netlify/functions"
 
+[[edge_functions]]
+  path = "/r/*"
+  function = "og-receipt"
+
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
