@@ -2,7 +2,7 @@ const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 
 // Bot/crawler user-agent patterns that need OG tags
 const CRAWLER_PATTERN =
-  /bot|crawl|spider|slurp|facebookexternalhit|Facebot|Twitterbot|LinkedInBot|WhatsApp|Slack|Telegram|Discord|iMessage|Apple|preview|embed|fetch|curl/i;
+  /bot|crawl|spider|slurp|facebookexternalhit|Facebot|Twitterbot|LinkedInBot|WhatsApp|Slack|Telegram|Discord|iMessage|preview|embed|fetch|curl/i;
 
 export default async function handler(request, context) {
   const url = new URL(request.url);
@@ -36,10 +36,11 @@ export default async function handler(request, context) {
     const storeName = data.storeName || "a store";
     const people = data.people || [];
     const items = data.items || [];
+    const taxRate = (data.taxRate ?? 20) / 100;
     const totalAmount = items.reduce((sum, item) => sum + (item.price || 0), 0);
     const taxTotal = items
       .filter((item) => item.taxCode === "A")
-      .reduce((sum, item) => sum + (item.price || 0) * 0.2, 0);
+      .reduce((sum, item) => sum + (item.price || 0) * taxRate, 0);
     const grandTotal = totalAmount + taxTotal;
 
     const personCount = people.length;
