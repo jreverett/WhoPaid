@@ -731,9 +731,6 @@ If you cannot read any items, return: { "hasTaxCodes": false, "serviceCharge": n
                     <button class="btn-share sms" data-person-id="${person.id}" data-channel="sms">
                         SMS
                     </button>
-                    <button class="btn-share email" data-person-id="${person.id}" data-channel="email">
-                        Email
-                    </button>
                     <button class="btn-share copy" data-person-id="${person.id}" data-channel="copy">
                         Copy
                     </button>
@@ -801,24 +798,28 @@ If you cannot read any items, return: { "hasTaxCodes": false, "serviceCharge": n
             case 'sms':
                 window.open(`sms:?body=${encoded}`, '_blank');
                 break;
-            case 'email': {
-                const person = state.people.find((p) => p.id === personId);
-                const subject = encodeURIComponent('Your share from our shop');
-                window.open(`mailto:?subject=${subject}&body=${encoded}`, '_blank');
-                break;
-            }
-            case 'copy':
-                navigator.clipboard.writeText(message).then(() => {
-                    const btn = els.summaryContent.querySelector(
-                        `.btn-share.copy[data-person-id="${personId}"]`
-                    );
+            case 'copy': {
+                const btn = els.summaryContent.querySelector(
+                    `.btn-share.copy[data-person-id="${personId}"]`
+                );
+                const showFeedback = (success) => {
                     if (btn) {
                         const original = btn.textContent;
-                        btn.textContent = 'Copied!';
+                        btn.textContent = success ? 'Copied!' : 'Failed';
                         setTimeout(() => (btn.textContent = original), 2000);
                     }
-                });
+                };
+
+                // Try modern clipboard API first, fallback to textarea method
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(message)
+                        .then(() => showFeedback(true))
+                        .catch(() => fallbackCopy(message, showFeedback));
+                } else {
+                    fallbackCopy(message, showFeedback);
+                }
                 break;
+            }
         }
     }
 
@@ -829,7 +830,7 @@ If you cannot read any items, return: { "hasTaxCodes": false, "serviceCharge": n
         // Filter out completely empty items
         state.items = state.items.filter((i) => i.name.trim() || i.price > 0);
         if (state.items.length === 0) {
-            alert('Please add at least one item before continuing.');
+            showToast('Please add at least one item before continuing.');
             return;
         }
         renderAssignments();
@@ -844,7 +845,7 @@ If you cannot read any items, return: { "hasTaxCodes": false, "serviceCharge": n
 
     els.toSummary.addEventListener('click', () => {
         if (state.people.length === 0) {
-            alert('Please add at least one person before continuing.');
+            showToast('Please add at least one person before continuing.');
             return;
         }
         renderSummary();
@@ -878,6 +879,40 @@ If you cannot read any items, return: { "hasTaxCodes": false, "serviceCharge": n
     });
 
     // ---- HELPERS ----
+    const toastEl = $('#toast');
+    let toastTimeout;
+
+    function showToast(message, duration = 3000) {
+        clearTimeout(toastTimeout);
+        toastEl.textContent = message;
+        toastEl.classList.remove('hidden');
+
+        // Trigger reflow for animation
+        toastEl.offsetHeight;
+        toastEl.classList.add('visible');
+
+        toastTimeout = setTimeout(() => {
+            toastEl.classList.remove('visible');
+        }, duration);
+    }
+
+    function fallbackCopy(text, callback) {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+            document.execCommand('copy');
+            callback(true);
+        } catch (err) {
+            console.error('Fallback copy failed:', err);
+            callback(false);
+        }
+        document.body.removeChild(textarea);
+    }
+
     function formatPrice(amount) {
         return '£' + amount.toFixed(2);
     }
