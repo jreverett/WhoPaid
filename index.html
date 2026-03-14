@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WhoPaid - Receipt Splitter</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="stylesheet" href="css/style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,6 +23,26 @@
             <div class="receipt-divider">- - - - - - - - - - - - - - - - - - - -</div>
         </header>
 
+        <!-- Settings Modal -->
+        <div id="settingsModal" class="modal hidden">
+            <div class="modal-backdrop"></div>
+            <div class="modal-content">
+                <h3>Settings</h3>
+                <div class="setting-group">
+                    <label for="apiKeyInput">Gemini API Key</label>
+                    <p class="setting-hint">Get your free API key from <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Google AI Studio</a></p>
+                    <div class="api-key-row">
+                        <input type="password" id="apiKeyInput" placeholder="Enter your Gemini API key">
+                        <button id="toggleKeyVisibility" class="btn-icon" title="Show/hide key">&#128065;</button>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button id="saveSettings" class="btn btn-primary">Save</button>
+                    <button id="closeSettings" class="btn btn-ghost">Cancel</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Step 1: Upload -->
         <section id="step-upload" class="step active">
             <div class="step-number">STEP 1</div>
@@ -35,7 +56,7 @@
             <div id="imagePreviewContainer" class="image-preview-container hidden"></div>
             <button id="processBtn" class="btn btn-primary hidden" disabled>
                 <span class="btn-text">Scan Receipt(s)</span>
-                <span class="btn-loading hidden">Scanning<span class="dots">...</span></span>
+                <span class="btn-loading hidden">Scanning<span class="dots"></span></span>
             </button>
             <div id="ocrProgress" class="ocr-progress hidden">
                 <div class="progress-bar">
@@ -49,9 +70,9 @@
         <section id="step-items" class="step hidden">
             <div class="step-number">STEP 2</div>
             <h2>Review Items</h2>
-            <p class="step-desc">Edit items, prices, and tax codes as needed. Costco tax codes: <strong>A</strong> = taxed, <strong>Z</strong> = non-taxed.</p>
+            <p class="step-desc" id="itemsStepDesc">Edit items and prices as needed.</p>
 
-            <div class="tax-rate-bar">
+            <div class="tax-rate-bar" id="taxRateBar">
                 <label for="taxRateInput">Tax Rate for code "A" items:</label>
                 <div class="tax-input-wrap">
                     <input type="number" id="taxRateInput" value="20" min="0" max="100" step="0.1">
@@ -139,10 +160,13 @@
         <!-- Footer -->
         <footer class="receipt-footer">
             <div class="receipt-divider">= = = = = = = = = = = = = = = = = = = =</div>
+            <button id="settingsBtn" class="settings-btn-footer" title="Settings">&#9881; Settings</button>
         </footer>
+
+        <!-- Toast notification -->
+        <div id="toast" class="toast hidden"></div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>
