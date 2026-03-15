@@ -1,8 +1,10 @@
 import { createClient } from '@libsql/client';
-import satori from 'satori';
+import * as satoriModule from 'satori';
 import { Resvg } from '@resvg/resvg-js';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+
+const satori = satoriModule.default || satoriModule;
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 
 // Cache font in memory
