@@ -205,7 +205,7 @@ exports.handler = async function(event) {
                                                     type: 'div',
                                                     props: {
                                                         style: {
-                                                            fontSize: '17px',
+                                                            fontSize: '24px',
                                                             color: COLORS.inkLight,
                                                             marginBottom: '40px',
                                                         },
@@ -217,7 +217,7 @@ exports.handler = async function(event) {
                                                     type: 'div',
                                                     props: {
                                                         style: {
-                                                            fontSize: '14px',
+                                                            fontSize: '18px',
                                                             color: COLORS.inkFaint,
                                                             letterSpacing: '0.05em',
                                                             marginBottom: '4px',
@@ -249,7 +249,7 @@ exports.handler = async function(event) {
                                                 backgroundColor: COLORS.paper,
                                                 border: `1px solid ${COLORS.border}`,
                                                 borderRadius: '8px',
-                                                padding: '24px',
+                                                padding: '32px',
                                                 display: 'flex',
                                                 flexDirection: 'column',
                                             },
@@ -267,14 +267,14 @@ exports.handler = async function(event) {
                                                         {
                                                             type: 'div',
                                                             props: {
-                                                                style: { fontSize: '17px', color: COLORS.ink },
+                                                                style: { fontSize: '26px', color: COLORS.ink },
                                                                 children: split.name,
                                                             },
                                                         },
                                                         {
                                                             type: 'div',
                                                             props: {
-                                                                style: { fontSize: '17px', fontWeight: 700, color: COLORS.ink },
+                                                                style: { fontSize: '26px', fontWeight: 700, color: COLORS.ink },
                                                                 children: formatPrice(split.amount),
                                                             },
                                                         },
