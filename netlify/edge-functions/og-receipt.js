@@ -64,7 +64,8 @@ export default async function handler(request, context) {
         ? descParts.join(" · ")
         : "View the receipt breakdown";
 
-    const ogImageUrl = new URL("/og-image.png", url.origin).toString();
+    // Use dynamic OG image for this specific receipt
+    const ogImageUrl = new URL(`/api/og-image/${receiptId}`, url.origin).toString();
     const pageUrl = url.toString();
 
     const html = `<!DOCTYPE html>

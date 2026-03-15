@@ -4,6 +4,8 @@
   "type": "module",
   "description": "Receipt Splitter App",
   "dependencies": {
-    "@libsql/client": "^0.14.0"
+    "@libsql/client": "^0.14.0",
+    "satori": "^0.10.14",
+    "@resvg/resvg-js": "^2.6.2"
   }
 }
