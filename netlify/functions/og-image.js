@@ -2,10 +2,7 @@ import { createClient } from '@libsql/client';
 import satori from 'satori';
 import { Resvg } from '@resvg/resvg-js';
 import { readFileSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-
-const currentDir = dirname(fileURLToPath(import.meta.url));
+import { join } from 'path';
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 
 // Cache font in memory
@@ -36,7 +33,7 @@ function getDb() {
 // Load bundled font (cached in memory after first read)
 function loadFont() {
     if (!fontData) {
-        const fontPath = join(currentDir, 'fonts', 'CourierPrime-Regular.ttf');
+        const fontPath = join(__dirname, 'fonts', 'CourierPrime-Regular.ttf');
         fontData = readFileSync(fontPath);
     }
     return fontData;
