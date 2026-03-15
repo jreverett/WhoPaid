@@ -526,16 +526,7 @@ If you cannot read any items, return: { "storeName": null, "hasTaxCodes": false,
         }
 
         try {
-            const parsed = JSON.parse(jsonStr);
-            // Handle both old array format and new object format
-            if (Array.isArray(parsed)) {
-                return { storeName: null, hasTaxCodes: true, serviceCharge: null, items: parsed };
-            }
-            if (parsed && Array.isArray(parsed.items)) {
-                return parsed;
-            }
-            console.warn('Gemini returned unexpected format:', parsed);
-            return { storeName: null, hasTaxCodes: false, serviceCharge: null, items: [] };
+            return JSON.parse(jsonStr);
         } catch (e) {
             console.error('Failed to parse Gemini response:', jsonStr);
             return { storeName: null, hasTaxCodes: false, serviceCharge: null, items: [] };
