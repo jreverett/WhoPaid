@@ -328,10 +328,10 @@ export async function handler(event) {
         };
     } catch (error) {
         console.error('Error generating OG image:', error);
-        // Fallback to static image
+        // Return error for debugging
         return {
-            statusCode: 302,
-            headers: { Location: '/og-image.png' },
+            statusCode: 500,
+            body: JSON.stringify({ error: error.message, stack: error.stack }),
         };
     }
 }
