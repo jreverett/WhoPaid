@@ -250,6 +250,8 @@ exports.handler = async function(event) {
                                                 border: `1px solid ${COLORS.border}`,
                                                 borderRadius: '8px',
                                                 padding: '24px',
+                                                display: 'flex',
+                                                flexDirection: 'column',
                                             },
                                             children: splits.slice(0, 5).map((split, i) => ({
                                                 type: 'div',
@@ -328,10 +330,10 @@ exports.handler = async function(event) {
         };
     } catch (error) {
         console.error('Error generating OG image:', error);
-        // Return error for debugging
+        // Fallback to static image
         return {
-            statusCode: 500,
-            body: JSON.stringify({ error: error.message, stack: error.stack }),
+            statusCode: 302,
+            headers: { Location: '/og-image.png' },
         };
     }
 }
