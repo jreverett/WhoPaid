@@ -1,8 +1,15 @@
 import { createClient } from '@libsql/client';
 import satori from 'satori';
 import { Resvg } from '@resvg/resvg-js';
+import { readFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
+
+// Cache font in memory
+let fontData = null;
 
 // Colors matching site CSS
 const COLORS = {
@@ -26,13 +33,13 @@ function getDb() {
     return db;
 }
 
-// Fetch a basic monospace font for the receipt look
-async function loadFont() {
-    // Use a simple approach - fetch a Google Font
-    const response = await fetch(
-        'https://fonts.gstatic.com/s/courierprime/v9/u-450q2lgwslOqpF_6gQ8kELWwZjW-Y.woff'
-    );
-    return await response.arrayBuffer();
+// Load bundled font (cached in memory after first read)
+function loadFont() {
+    if (!fontData) {
+        const fontPath = join(__dirname, 'fonts', 'CourierPrime-Regular.woff');
+        fontData = readFileSync(fontPath);
+    }
+    return fontData;
 }
 
 function formatPrice(amount) {
@@ -109,7 +116,7 @@ export async function handler(event) {
         const storeName = data.storeName || 'Receipt';
 
         // Load font
-        const fontData = await loadFont();
+        const font = loadFont();
 
         // Generate SVG with Satori
         const svg = await satori(
@@ -289,13 +296,13 @@ export async function handler(event) {
                 fonts: [
                     {
                         name: 'Courier Prime',
-                        data: fontData,
+                        data: font,
                         weight: 400,
                         style: 'normal',
                     },
                     {
                         name: 'Courier Prime',
-                        data: fontData,
+                        data: font,
                         weight: 700,
                         style: 'normal',
                     },
