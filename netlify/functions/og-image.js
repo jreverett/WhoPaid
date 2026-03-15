@@ -110,7 +110,7 @@ exports.handler = async function(event) {
         const dateStr = date.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
 
         // Store name - use first item or generic
-        const storeName = data.storeName || 'Receipt';
+        const storeName = data.storeName || 'WhoPaid?';
 
         // Load font
         const font = loadFont();

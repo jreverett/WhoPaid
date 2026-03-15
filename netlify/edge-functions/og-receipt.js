@@ -33,7 +33,7 @@ export default async function handler(request, context) {
     const data = receipt.data;
 
     // Build a meaningful description from the receipt data
-    const storeName = data.storeName || "a store";
+    const storeName = data.storeName || "WhoPaid?";
     const people = data.people || [];
     const items = data.items || [];
     const taxRate = (data.taxRate ?? 20) / 100;
