@@ -3,6 +3,9 @@
 
 [functions]
   directory = "netlify/functions"
+  node_bundler = "esbuild"
+  external_node_modules = ["satori", "@resvg/resvg-js"]
+  included_files = ["netlify/functions/fonts/**"]
 
 [[edge_functions]]
   path = "/r/*"
