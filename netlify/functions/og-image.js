@@ -5,7 +5,7 @@ import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const currentDir = dirname(fileURLToPath(import.meta.url));
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 
 // Cache font in memory
@@ -36,7 +36,7 @@ function getDb() {
 // Load bundled font (cached in memory after first read)
 function loadFont() {
     if (!fontData) {
-        const fontPath = join(__dirname, 'fonts', 'CourierPrime-Regular.ttf');
+        const fontPath = join(currentDir, 'fonts', 'CourierPrime-Regular.ttf');
         fontData = readFileSync(fontPath);
     }
     return fontData;
