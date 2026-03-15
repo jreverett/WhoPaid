@@ -14,6 +14,7 @@
         taxRate: 20,       // default UK VAT
         hasTaxCodes: false,
         serviceCharge: null,
+        storeName: null,   // extracted from receipt header
         receiptId: null,   // GUID after saving
     };
 
@@ -194,6 +195,7 @@
             taxRate: state.taxRate,
             hasTaxCodes: state.hasTaxCodes,
             serviceCharge: state.serviceCharge,
+            storeName: state.storeName,
         };
 
         try {
@@ -244,6 +246,7 @@
             state.taxRate = data.taxRate ?? 20;
             state.hasTaxCodes = data.hasTaxCodes || false;
             state.serviceCharge = data.serviceCharge || null;
+            state.storeName = data.storeName || null;
             state.receiptId = id;
 
             // Update counters to avoid ID conflicts
@@ -450,6 +453,7 @@ You must DEDUPLICATE items that appear in multiple images. Use item names, price
 
 Return a JSON object with this exact format:
 {
+  "storeName": "STORE NAME",
   "hasTaxCodes": true,
   "serviceCharge": null,
   "items": [
@@ -458,6 +462,7 @@ Return a JSON object with this exact format:
 }
 
 Fields:
+- storeName: the store/restaurant/business name from the receipt header (max 30 characters)
 - hasTaxCodes: true if receipt shows tax codes (like A/Z on Costco receipts), false otherwise
 - serviceCharge: if this is a restaurant receipt with a service charge/gratuity, include the amount as a number. Otherwise null
 - items: array of purchased items (DEDUPLICATED if multiple images)
@@ -474,7 +479,7 @@ Important:
 - But if the same item appears in multiple PHOTOS, only include it once
 - Return ONLY the JSON object - no markdown fences, no explanation
 
-If you cannot read any items, return: { "hasTaxCodes": false, "serviceCharge": null, "items": [] }`;
+If you cannot read any items, return: { "storeName": null, "hasTaxCodes": false, "serviceCharge": null, "items": [] }`;
 
         const response = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
@@ -524,16 +529,16 @@ If you cannot read any items, return: { "hasTaxCodes": false, "serviceCharge": n
             const parsed = JSON.parse(jsonStr);
             // Handle both old array format and new object format
             if (Array.isArray(parsed)) {
-                return { hasTaxCodes: true, serviceCharge: null, items: parsed };
+                return { storeName: null, hasTaxCodes: true, serviceCharge: null, items: parsed };
             }
             if (parsed && Array.isArray(parsed.items)) {
                 return parsed;
             }
             console.warn('Gemini returned unexpected format:', parsed);
-            return { hasTaxCodes: false, serviceCharge: null, items: [] };
+            return { storeName: null, hasTaxCodes: false, serviceCharge: null, items: [] };
         } catch (e) {
             console.error('Failed to parse Gemini response:', jsonStr);
-            return { hasTaxCodes: false, serviceCharge: null, items: [] };
+            return { storeName: null, hasTaxCodes: false, serviceCharge: null, items: [] };
         }
     }
 
@@ -604,10 +609,12 @@ If you cannot read any items, return: { "hasTaxCodes": false, "serviceCharge": n
 
         const detectedTaxCodes = result.hasTaxCodes;
         const totalServiceCharge = parseFloat(result.serviceCharge) || 0;
+        const extractedStoreName = result.storeName || null;
 
         // Store items and detected settings
         state.hasTaxCodes = detectedTaxCodes;
         state.serviceCharge = totalServiceCharge > 0 ? totalServiceCharge : null;
+        state.storeName = extractedStoreName;
 
         // Filter out any service charge items Gemini may have included to avoid duplication
         const serviceChargePattern = /service\s*charge|gratuity|tip/i;
@@ -1112,6 +1119,7 @@ If you cannot read any items, return: { "hasTaxCodes": false, "serviceCharge": n
         state.assignments = {};
         state.hasTaxCodes = false;
         state.serviceCharge = null;
+        state.storeName = null;
         state.receiptId = null;
         itemIdCounter = 0;
         personIdCounter = 0;

@@ -36,7 +36,7 @@ function getDb() {
 // Load bundled font (cached in memory after first read)
 function loadFont() {
     if (!fontData) {
-        const fontPath = join(__dirname, 'fonts', 'CourierPrime-Regular.woff');
+        const fontPath = join(__dirname, 'fonts', 'CourierPrime-Regular.ttf');
         fontData = readFileSync(fontPath);
     }
     return fontData;
