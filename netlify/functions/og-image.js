@@ -1,10 +1,8 @@
-import { createClient } from '@libsql/client';
-import * as satoriModule from 'satori';
-import { Resvg } from '@resvg/resvg-js';
-import { readFileSync } from 'fs';
-import { join } from 'path';
-
-const satori = satoriModule.default || satoriModule;
+const { createClient } = require('@libsql/client');
+const satori = require('satori').default;
+const { Resvg } = require('@resvg/resvg-js');
+const { readFileSync } = require('fs');
+const { join } = require('path');
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 
 // Cache font in memory
@@ -45,7 +43,7 @@ function formatPrice(amount) {
     return '£' + Number(amount).toFixed(2);
 }
 
-export async function handler(event) {
+exports.handler = async function(event) {
     try {
         // Extract receipt ID from path: /api/og-image/:id
         const pathParts = event.path.split('/').filter(Boolean);
