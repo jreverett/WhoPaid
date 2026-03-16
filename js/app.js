@@ -121,6 +121,11 @@
     });
 
     async function saveReceipt() {
+        // Don't save again if we already have a receipt ID
+        if (state.receiptId) {
+            return state.receiptId;
+        }
+
         // Build a label for the receipt
         const peopleCount = state.people.length;
         const firstItem = state.items.find(i => i.name) || { name: 'Receipt' };
@@ -511,6 +516,20 @@
                     cropX, cropY, cropW, cropH,  // Source rectangle
                     0, 0, outWidth, outHeight     // Destination rectangle
                 );
+
+                // Enhance contrast for better OCR on faded thermal receipts
+                const outputImageData = outputCtx.getImageData(0, 0, outWidth, outHeight);
+                const pixels = outputImageData.data;
+                const contrastFactor = 1.3; // Boost contrast by 30%
+                const midpoint = 128;
+
+                for (let i = 0; i < pixels.length; i += 4) {
+                    // Apply contrast enhancement to RGB channels
+                    pixels[i] = Math.min(255, Math.max(0, midpoint + (pixels[i] - midpoint) * contrastFactor));
+                    pixels[i + 1] = Math.min(255, Math.max(0, midpoint + (pixels[i + 1] - midpoint) * contrastFactor));
+                    pixels[i + 2] = Math.min(255, Math.max(0, midpoint + (pixels[i + 2] - midpoint) * contrastFactor));
+                }
+                outputCtx.putImageData(outputImageData, 0, 0);
 
                 // Convert to JPEG with compression
                 const dataUrl = outputCanvas.toDataURL('image/jpeg', IMAGE_QUALITY);
