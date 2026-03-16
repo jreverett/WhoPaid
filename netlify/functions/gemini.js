@@ -16,7 +16,7 @@ function getDb() {
     return db;
 }
 
-async function initRateLimitDb() {
+async function initDb() {
     const client = getDb();
     await client.execute(`
         CREATE TABLE IF NOT EXISTS rate_limits (
@@ -25,6 +25,55 @@ async function initRateLimitDb() {
             reset_date TEXT NOT NULL
         )
     `);
+    await client.execute(`
+        CREATE TABLE IF NOT EXISTS error_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL,
+            ip_address TEXT,
+            error_type TEXT NOT NULL,
+            error_message TEXT,
+            stack_trace TEXT,
+            request_context TEXT,
+            gemini_response TEXT
+        )
+    `);
+}
+
+async function logError({ ip, errorType, message, stack, context, geminiResponse }) {
+    try {
+        const client = getDb();
+        await client.execute({
+            sql: `INSERT INTO error_logs (created_at, ip_address, error_type, error_message, stack_trace, request_context, gemini_response)
+                  VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            args: [
+                new Date().toISOString(),
+                ip || 'unknown',
+                errorType,
+                message || null,
+                stack || null,
+                context ? JSON.stringify(context) : null,
+                geminiResponse ? JSON.stringify(geminiResponse).substring(0, 10000) : null,
+            ],
+        });
+    } catch (e) {
+        // Don't let logging errors break the main flow
+        console.error('Failed to log error:', e);
+    }
+}
+
+// Map technical errors to user-friendly messages
+function getFriendlyError(errorType, details) {
+    const messages = {
+        'GEMINI_API_ERROR': `The receipt couldn't be processed. ${details || 'Please try again.'}`,
+        'GEMINI_BLOCKED': 'The image was blocked by safety filters. Please try a different image.',
+        'GEMINI_QUOTA': 'The AI service is temporarily overloaded. Please try again in a few minutes.',
+        'GEMINI_INVALID_IMAGE': 'The image format is not supported or the image is corrupted.',
+        'GEMINI_TIMEOUT': 'The request took too long. Please try with a clearer image.',
+        'PARSE_ERROR': 'Could not read the receipt. Please try a clearer photo.',
+        'CONFIG_ERROR': 'Service is not properly configured. Please contact support.',
+        'UNKNOWN': 'Something went wrong. Please try again.',
+    };
+    return messages[errorType] || messages['UNKNOWN'];
 }
 
 function getTodayDate() {
@@ -104,10 +153,10 @@ export async function handler(event) {
         };
     }
 
-    try {
-        await initRateLimitDb();
+    const clientIP = getClientIP(event);
 
-        const clientIP = getClientIP(event);
+    try {
+        await initDb();
 
         // Check global rate limit
         const globalCheck = await checkAndIncrementRateLimit('global', GLOBAL_DAILY_LIMIT);
@@ -201,11 +250,16 @@ If you cannot read any items, return: { "storeName": null, "hasTaxCodes": false,
 
         const apiKey = process.env.GEMINI_API_KEY;
         if (!apiKey) {
-            console.error('GEMINI_API_KEY not configured');
+            await logError({
+                ip: clientIP,
+                errorType: 'CONFIG_ERROR',
+                message: 'GEMINI_API_KEY not configured',
+                context: { imageCount: images.length },
+            });
             return {
                 statusCode: 500,
                 headers,
-                body: JSON.stringify({ error: 'Service not configured' }),
+                body: JSON.stringify({ error: getFriendlyError('CONFIG_ERROR') }),
             };
         }
 
@@ -234,17 +288,77 @@ If you cannot read any items, return: { "storeName": null, "hasTaxCodes": false,
         );
 
         if (!response.ok) {
-            const error = await response.json().catch(() => ({}));
-            console.error('Gemini API error:', error);
+            const errorBody = await response.json().catch(() => ({}));
+            const errorMessage = errorBody.error?.message || `HTTP ${response.status}`;
+
+            // Determine error type from response
+            let errorType = 'GEMINI_API_ERROR';
+            let details = null;
+
+            if (response.status === 429 || errorMessage.includes('quota') || errorMessage.includes('rate')) {
+                errorType = 'GEMINI_QUOTA';
+            } else if (errorMessage.includes('safety') || errorMessage.includes('blocked')) {
+                errorType = 'GEMINI_BLOCKED';
+            } else if (errorMessage.includes('invalid') && errorMessage.includes('image')) {
+                errorType = 'GEMINI_INVALID_IMAGE';
+            } else if (response.status === 400) {
+                details = 'The image may be too large or in an unsupported format.';
+            }
+
+            await logError({
+                ip: clientIP,
+                errorType,
+                message: errorMessage,
+                context: {
+                    imageCount: images.length,
+                    httpStatus: response.status,
+                },
+                geminiResponse: errorBody,
+            });
+
             return {
                 statusCode: 502,
                 headers,
-                body: JSON.stringify({ error: 'Failed to process receipt' }),
+                body: JSON.stringify({ error: getFriendlyError(errorType, details) }),
             };
         }
 
         const data = await response.json();
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+
+        // Check for blocked content or empty response
+        const candidate = data.candidates?.[0];
+        if (!candidate) {
+            const blockReason = data.promptFeedback?.blockReason;
+            if (blockReason) {
+                await logError({
+                    ip: clientIP,
+                    errorType: 'GEMINI_BLOCKED',
+                    message: `Content blocked: ${blockReason}`,
+                    context: { imageCount: images.length },
+                    geminiResponse: data,
+                });
+                return {
+                    statusCode: 400,
+                    headers,
+                    body: JSON.stringify({ error: getFriendlyError('GEMINI_BLOCKED') }),
+                };
+            }
+
+            await logError({
+                ip: clientIP,
+                errorType: 'GEMINI_API_ERROR',
+                message: 'No candidates in response',
+                context: { imageCount: images.length },
+                geminiResponse: data,
+            });
+            return {
+                statusCode: 502,
+                headers,
+                body: JSON.stringify({ error: getFriendlyError('GEMINI_API_ERROR', 'No response from AI.') }),
+            };
+        }
+
+        const text = candidate.content?.parts?.[0]?.text || '{}';
 
         // Parse the JSON response (handle potential markdown fences)
         let jsonStr = text.trim();
@@ -256,8 +370,19 @@ If you cannot read any items, return: { "storeName": null, "hasTaxCodes": false,
         try {
             result = JSON.parse(jsonStr);
         } catch (e) {
-            console.error('Failed to parse Gemini response:', jsonStr);
-            result = { storeName: null, hasTaxCodes: false, serviceCharge: null, items: [] };
+            await logError({
+                ip: clientIP,
+                errorType: 'PARSE_ERROR',
+                message: e.message,
+                stack: e.stack,
+                context: { imageCount: images.length },
+                geminiResponse: { rawText: text.substring(0, 2000) },
+            });
+            return {
+                statusCode: 502,
+                headers,
+                body: JSON.stringify({ error: getFriendlyError('PARSE_ERROR') }),
+            };
         }
 
         return {
@@ -271,10 +396,19 @@ If you cannot read any items, return: { "storeName": null, "hasTaxCodes": false,
 
     } catch (error) {
         console.error('Error:', error);
+
+        await logError({
+            ip: clientIP,
+            errorType: 'UNKNOWN',
+            message: error.message,
+            stack: error.stack,
+            context: { stage: 'handler' },
+        });
+
         return {
             statusCode: 500,
             headers,
-            body: JSON.stringify({ error: 'Internal server error' }),
+            body: JSON.stringify({ error: getFriendlyError('UNKNOWN') }),
         };
     }
 }
