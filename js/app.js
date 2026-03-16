@@ -406,39 +406,119 @@
     }
 
     // ---- RECEIPT SCANNING API ----
-    const MAX_IMAGE_DIMENSION = 1600; // Max width or height
-    const IMAGE_QUALITY = 0.85; // JPEG quality
-    const MAX_FILE_SIZE_KB = 800; // Target max size per image
+    const MAX_IMAGE_DIMENSION = 2400; // Max width or height (increased for OCR accuracy)
+    const IMAGE_QUALITY = 0.92; // JPEG quality (increased for text clarity)
+    const MAX_FILE_SIZE_KB = 1200; // Target max size per image
+
+    // Detect receipt boundaries and return crop coordinates
+    function detectReceiptBounds(imageData, width, height) {
+        const data = imageData.data;
+        const BRIGHTNESS_THRESHOLD = 180; // Pixels brighter than this are likely receipt paper
+        const SAMPLE_STEP = 4; // Sample every 4th pixel for performance
+
+        let minX = width, maxX = 0, minY = height, maxY = 0;
+        let receiptPixelCount = 0;
+
+        // Scan for bright (receipt paper) pixels
+        for (let y = 0; y < height; y += SAMPLE_STEP) {
+            for (let x = 0; x < width; x += SAMPLE_STEP) {
+                const idx = (y * width + x) * 4;
+                const r = data[idx];
+                const g = data[idx + 1];
+                const b = data[idx + 2];
+                const brightness = (r + g + b) / 3;
+
+                if (brightness > BRIGHTNESS_THRESHOLD) {
+                    receiptPixelCount++;
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                }
+            }
+        }
+
+        // If we found enough bright pixels, use detected bounds
+        const totalSampled = (width / SAMPLE_STEP) * (height / SAMPLE_STEP);
+        const brightRatio = receiptPixelCount / totalSampled;
+
+        // Only crop if there's a clear receipt area (10-90% of image is bright)
+        if (brightRatio > 0.1 && brightRatio < 0.9 && maxX > minX && maxY > minY) {
+            // Add padding (5% of dimensions)
+            const padX = Math.round(width * 0.03);
+            const padY = Math.round(height * 0.03);
+
+            return {
+                x: Math.max(0, minX - padX),
+                y: Math.max(0, minY - padY),
+                width: Math.min(width, maxX - minX + 2 * padX),
+                height: Math.min(height, maxY - minY + 2 * padY),
+                cropped: true
+            };
+        }
+
+        // No clear receipt detected, use full image
+        return { x: 0, y: 0, width, height, cropped: false };
+    }
 
     async function compressImage(file) {
         return new Promise((resolve, reject) => {
             const img = new Image();
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
 
             img.onload = () => {
-                let { width, height } = img;
+                // First, draw full image to detect receipt bounds
+                const detectCanvas = document.createElement('canvas');
+                const detectCtx = detectCanvas.getContext('2d');
 
-                // Scale down if needed
-                if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
-                    if (width > height) {
-                        height = Math.round((height * MAX_IMAGE_DIMENSION) / width);
-                        width = MAX_IMAGE_DIMENSION;
+                // Use smaller size for detection (faster)
+                const detectScale = Math.min(1, 800 / Math.max(img.width, img.height));
+                detectCanvas.width = Math.round(img.width * detectScale);
+                detectCanvas.height = Math.round(img.height * detectScale);
+                detectCtx.drawImage(img, 0, 0, detectCanvas.width, detectCanvas.height);
+
+                const imageData = detectCtx.getImageData(0, 0, detectCanvas.width, detectCanvas.height);
+                const bounds = detectReceiptBounds(imageData, detectCanvas.width, detectCanvas.height);
+
+                // Scale bounds back to original image size
+                const scale = 1 / detectScale;
+                const cropX = Math.round(bounds.x * scale);
+                const cropY = Math.round(bounds.y * scale);
+                const cropW = Math.round(bounds.width * scale);
+                const cropH = Math.round(bounds.height * scale);
+
+                // Calculate output dimensions
+                let outWidth = cropW;
+                let outHeight = cropH;
+
+                if (outWidth > MAX_IMAGE_DIMENSION || outHeight > MAX_IMAGE_DIMENSION) {
+                    if (outWidth > outHeight) {
+                        outHeight = Math.round((outHeight * MAX_IMAGE_DIMENSION) / outWidth);
+                        outWidth = MAX_IMAGE_DIMENSION;
                     } else {
-                        width = Math.round((width * MAX_IMAGE_DIMENSION) / height);
-                        height = MAX_IMAGE_DIMENSION;
+                        outWidth = Math.round((outWidth * MAX_IMAGE_DIMENSION) / outHeight);
+                        outHeight = MAX_IMAGE_DIMENSION;
                     }
                 }
 
-                canvas.width = width;
-                canvas.height = height;
-                ctx.drawImage(img, 0, 0, width, height);
+                // Draw cropped and scaled image
+                const outputCanvas = document.createElement('canvas');
+                const outputCtx = outputCanvas.getContext('2d');
+                outputCanvas.width = outWidth;
+                outputCanvas.height = outHeight;
+
+                outputCtx.drawImage(
+                    img,
+                    cropX, cropY, cropW, cropH,  // Source rectangle
+                    0, 0, outWidth, outHeight     // Destination rectangle
+                );
 
                 // Convert to JPEG with compression
-                const dataUrl = canvas.toDataURL('image/jpeg', IMAGE_QUALITY);
+                const dataUrl = outputCanvas.toDataURL('image/jpeg', IMAGE_QUALITY);
                 const base64 = dataUrl.split(',')[1];
+                const outputSizeKB = Math.round(base64.length * 0.75 / 1024);
 
-                console.log(`Image compressed: ${Math.round(file.size / 1024)}KB -> ${Math.round(base64.length * 0.75 / 1024)}KB`);
+                console.log(`Image processed: ${Math.round(file.size / 1024)}KB -> ${outputSizeKB}KB` +
+                    (bounds.cropped ? ` (cropped to receipt)` : ` (no crop needed)`));
 
                 resolve({
                     mimeType: 'image/jpeg',
