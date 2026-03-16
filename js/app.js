@@ -390,8 +390,9 @@
                 showStep('step-upload');
             }
         } else {
-            // Normal flow - show recent receipts
+            // Normal flow - show upload page with recent receipts
             renderRecentReceipts();
+            showStep('step-upload');
         }
     }
 
