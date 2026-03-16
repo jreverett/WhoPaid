@@ -4,6 +4,7 @@ import { getStore } from '@netlify/blobs';
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 
 let db = null;
+let tablesInitialized = false;
 
 function getDb() {
     if (!db) {
@@ -15,7 +16,9 @@ function getDb() {
     return db;
 }
 
-async function initDb() {
+async function ensureTables() {
+    if (tablesInitialized) return;
+
     const client = getDb();
     await client.execute(`
         CREATE TABLE IF NOT EXISTS receipts (
@@ -27,6 +30,46 @@ async function initDb() {
     await client.execute(`
         CREATE INDEX IF NOT EXISTS idx_receipts_created_at ON receipts(created_at)
     `);
+    await client.execute(`
+        CREATE TABLE IF NOT EXISTS error_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL,
+            ip_address TEXT,
+            error_type TEXT NOT NULL,
+            error_message TEXT,
+            stack_trace TEXT,
+            request_context TEXT,
+            gemini_response TEXT
+        )
+    `);
+    tablesInitialized = true;
+}
+
+async function logError({ ip, errorType, message, stack, context }) {
+    try {
+        const client = getDb();
+        await client.execute({
+            sql: `INSERT INTO error_logs (created_at, ip_address, error_type, error_message, stack_trace, request_context)
+                  VALUES (?, ?, ?, ?, ?, ?)`,
+            args: [
+                new Date().toISOString(),
+                ip || 'unknown',
+                errorType,
+                message || null,
+                stack || null,
+                context ? JSON.stringify(context) : null,
+            ],
+        });
+    } catch (e) {
+        console.error('Failed to log error:', e);
+    }
+}
+
+function getClientIP(event) {
+    return event.headers['x-nf-client-connection-ip'] ||
+           event.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+           event.headers['client-ip'] ||
+           'unknown';
 }
 
 function generateUUID() {
@@ -59,8 +102,10 @@ export async function handler(event) {
         return { statusCode: 204, headers };
     }
 
+    const clientIP = getClientIP(event);
+
     try {
-        await initDb();
+        await ensureTables();
 
         // Extract ID and action from path: /api/receipts/:id or /api/receipts/:id/images
         const pathParts = event.path.split('/').filter(Boolean);
@@ -95,6 +140,13 @@ export async function handler(event) {
                     });
                 } catch (blobError) {
                     console.error('Failed to store images:', blobError);
+                    await logError({
+                        ip: clientIP,
+                        errorType: 'BLOB_STORE_ERROR',
+                        message: blobError.message,
+                        stack: blobError.stack,
+                        context: { receiptId: id, action: 'store-images', imageCount: images.length },
+                    });
                     // Continue without images - receipt is still saved
                 }
             }
@@ -138,6 +190,13 @@ export async function handler(event) {
                 };
             } catch (error) {
                 console.error('Error fetching images:', error);
+                await logError({
+                    ip: clientIP,
+                    errorType: 'BLOB_FETCH_ERROR',
+                    message: error.message,
+                    stack: error.stack,
+                    context: { receiptId, action: 'fetch-images' },
+                });
                 return {
                     statusCode: 500,
                     headers,
@@ -194,6 +253,13 @@ export async function handler(event) {
         };
     } catch (error) {
         console.error('Error:', error);
+        await logError({
+            ip: clientIP,
+            errorType: 'RECEIPTS_ERROR',
+            message: error.message,
+            stack: error.stack,
+            context: { path: event.path, method: event.httpMethod },
+        });
         return {
             statusCode: 500,
             headers,
