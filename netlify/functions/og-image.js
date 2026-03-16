@@ -1,6 +1,9 @@
 import { createClient } from '@libsql/client';
-import satori from 'satori';
-import { Resvg } from '@resvg/resvg-js';
+import * as satoriModule from 'satori';
+import * as resvgModule from '@resvg/resvg-js';
+
+const satori = satoriModule.default || satoriModule;
+const Resvg = resvgModule.Resvg || resvgModule.default?.Resvg;
 import { readFileSync } from 'fs';
 import { join } from 'path';
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
