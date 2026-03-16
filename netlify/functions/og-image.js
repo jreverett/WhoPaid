@@ -1,11 +1,19 @@
 import { createClient } from '@libsql/client';
-import * as satoriModule from 'satori';
-import * as resvgModule from '@resvg/resvg-js';
-
-const satori = satoriModule.default || satoriModule;
-const Resvg = resvgModule.Resvg || resvgModule.default?.Resvg;
 import { readFileSync } from 'fs';
 import { join } from 'path';
+
+// Dynamic imports for ESM modules (loaded in handler)
+let satori, Resvg;
+async function loadDeps() {
+    if (!satori) {
+        const satoriMod = await import('satori');
+        satori = satoriMod.default;
+    }
+    if (!Resvg) {
+        const resvgMod = await import('@resvg/resvg-js');
+        Resvg = resvgMod.Resvg;
+    }
+}
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 
 // Cache font in memory
@@ -58,6 +66,8 @@ function formatPrice(amount) {
 
 export async function handler(event) {
     try {
+        await loadDeps();
+
         // Extract receipt ID from path: /api/og-image/:id
         const pathParts = event.path.split('/').filter(Boolean);
         const receiptId = pathParts.length > 2 ? pathParts[pathParts.length - 1] : null;
