@@ -26,7 +26,6 @@
         '#eb2f96', '#fa8c16', '#13c2c2', '#595959',
     ];
 
-    const STORAGE_KEY = 'whopaid_gemini_api_key';
     const STORAGE_KEY_RECENT = 'recentReceipts';
     const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -62,13 +61,6 @@
         toSummary: $('#toSummary'),
         backToAssign: $('#backToAssign'),
         startOver: $('#startOver'),
-        // Settings
-        settingsBtn: $('#settingsBtn'),
-        settingsModal: $('#settingsModal'),
-        apiKeyInput: $('#apiKeyInput'),
-        toggleKeyVisibility: $('#toggleKeyVisibility'),
-        saveSettings: $('#saveSettings'),
-        closeSettings: $('#closeSettings'),
         // Recent receipts
         recentReceipts: $('#recentReceipts'),
         recentList: $('#recentList'),
@@ -76,60 +68,6 @@
         // View mode
         viewContent: $('#viewContent'),
     };
-
-    // ---- SETTINGS ----
-    function getApiKey() {
-        return localStorage.getItem(STORAGE_KEY) || '';
-    }
-
-    function setApiKey(key) {
-        if (key) {
-            localStorage.setItem(STORAGE_KEY, key);
-        } else {
-            localStorage.removeItem(STORAGE_KEY);
-        }
-        updateSettingsButtonState();
-    }
-
-    function updateSettingsButtonState() {
-        if (getApiKey()) {
-            els.settingsBtn.classList.add('has-key');
-            els.settingsBtn.title = 'Settings (API key configured)';
-        } else {
-            els.settingsBtn.classList.remove('has-key');
-            els.settingsBtn.title = 'Settings';
-        }
-    }
-
-    function openSettings() {
-        els.apiKeyInput.value = getApiKey();
-        els.settingsModal.classList.remove('hidden');
-    }
-
-    function closeSettings() {
-        els.settingsModal.classList.add('hidden');
-    }
-
-    els.settingsBtn.addEventListener('click', openSettings);
-    els.closeSettings.addEventListener('click', closeSettings);
-    els.settingsModal.querySelector('.modal-backdrop').addEventListener('click', closeSettings);
-
-    els.saveSettings.addEventListener('click', () => {
-        setApiKey(els.apiKeyInput.value.trim());
-        closeSettings();
-    });
-
-    els.toggleKeyVisibility.addEventListener('click', () => {
-        const input = els.apiKeyInput;
-        if (input.type === 'password') {
-            input.type = 'text';
-        } else {
-            input.type = 'password';
-        }
-    });
-
-    // Initialize settings button state
-    updateSettingsButtonState();
 
     // ---- RECEIPT PERSISTENCE ----
     function getRecentReceipts() {
@@ -395,28 +333,7 @@
         });
     }
 
-    // ---- GEMINI API ----
-    async function listGeminiModels(apiKey) {
-        try {
-            const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
-            );
-            const data = await response.json();
-            console.log('Available Gemini models:', data);
-
-            // Filter for models that support generateContent
-            const generateModels = data.models?.filter(m =>
-                m.supportedGenerationMethods?.includes('generateContent')
-            ) || [];
-            console.log('Models supporting generateContent:', generateModels.map(m => m.name));
-
-            return generateModels;
-        } catch (err) {
-            console.error('Failed to list models:', err);
-            return [];
-        }
-    }
-
+    // ---- RECEIPT SCANNING API ----
     async function fileToBase64(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
@@ -430,119 +347,37 @@
         });
     }
 
-    async function extractItemsWithGemini(imageFiles, apiKey) {
+    async function extractItemsFromReceipt(imageFiles) {
         // Convert all images to base64
-        const imageParts = await Promise.all(
+        const images = await Promise.all(
             imageFiles.map(async (file) => ({
-                inline_data: {
-                    mime_type: file.type || 'image/jpeg',
-                    data: await fileToBase64(file),
-                },
+                mimeType: file.type || 'image/jpeg',
+                data: await fileToBase64(file),
             }))
         );
 
-        const imageCount = imageFiles.length;
-        const prompt = `You are a receipt parser. Analyze ${imageCount === 1 ? 'this receipt image' : `these ${imageCount} images of the same receipt`} and extract all purchased items.
-
-${imageCount > 1 ? `IMPORTANT: These ${imageCount} images are photos of the SAME receipt, possibly:
-- Overlapping (same items visible in multiple photos)
-- Out of order (not photographed top-to-bottom)
-- Capturing different sections of a long receipt
-
-You must DEDUPLICATE items that appear in multiple images. Use item names, prices, and position context to identify duplicates.` : ''}
-
-Return a JSON object with this exact format:
-{
-  "storeName": "STORE NAME",
-  "hasTaxCodes": true,
-  "serviceCharge": null,
-  "items": [
-    { "name": "PRODUCT NAME", "price": 12.99, "taxCode": "A" }
-  ]
-}
-
-Fields:
-- storeName: the store/restaurant/business name from the receipt header (max 30 characters)
-- hasTaxCodes: true if receipt shows tax codes (like A/Z on Costco receipts), false otherwise
-- serviceCharge: if this is a restaurant receipt with a service charge/gratuity, include the amount as a number. Otherwise null
-- items: array of purchased items (DEDUPLICATED if multiple images)
-  - name: Product name (max 60 characters)
-  - price: Line total as a number (not unit price - use the final amount)
-  - taxCode: "A" for taxed, "Z" for non-taxed. Only include if hasTaxCodes is true
-
-Important:
-- Extract ONLY purchased items
-- EXCLUDE voided/refunded items
-- EXCLUDE totals, subtotals, tax lines, payment methods, change, headers, dates, addresses
-- EXCLUDE section headers like "Bottom of Basket", "BOB Count", etc.
-- If an item GENUINELY appears multiple times on the receipt (customer bought 2 of same item as separate lines), include each
-- But if the same item appears in multiple PHOTOS, only include it once
-- Return ONLY the JSON object - no markdown fences, no explanation
-
-If you cannot read any items, return: { "storeName": null, "hasTaxCodes": false, "serviceCharge": null, "items": [] }`;
-
-        const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    contents: [
-                        {
-                            parts: [
-                                { text: prompt },
-                                ...imageParts,
-                            ],
-                        },
-                    ],
-                    generationConfig: {
-                        temperature: 0.1,
-                        maxOutputTokens: 8192,
-                    },
-                }),
-            }
-        );
+        const response = await fetch('/api/gemini', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ images }),
+        });
 
         if (!response.ok) {
             const error = await response.json().catch(() => ({}));
-            if (response.status === 400 && error.error?.message?.includes('API key')) {
-                throw new Error('Invalid API key. Please check your Gemini API key in settings.');
+            if (response.status === 429) {
+                throw new Error(error.error || 'Daily limit reached. Please try again tomorrow.');
             }
-            if (response.status === 403) {
-                throw new Error('API key not authorized. Please check your Gemini API key in settings.');
-            }
-            throw new Error(error.error?.message || `API error: ${response.status}`);
+            throw new Error(error.error || 'Failed to process receipt');
         }
 
-        const data = await response.json();
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
-
-        // Parse the JSON response (handle potential markdown fences)
-        let jsonStr = text.trim();
-        if (jsonStr.startsWith('```')) {
-            jsonStr = jsonStr.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
-        }
-
-        try {
-            return JSON.parse(jsonStr);
-        } catch (e) {
-            console.error('Failed to parse Gemini response:', jsonStr);
-            return { storeName: null, hasTaxCodes: false, serviceCharge: null, items: [] };
-        }
+        return response.json();
     }
 
     // ---- PROCESS RECEIPTS ----
     els.processBtn.addEventListener('click', async () => {
         if (state.images.length === 0) return;
-
-        // Check for API key
-        const apiKey = getApiKey();
-        if (!apiKey) {
-            openSettings();
-            return;
-        }
 
         // UI: show loading
         els.processBtn.querySelector('.btn-text').classList.add('hidden');
@@ -560,17 +395,10 @@ If you cannot read any items, return: { "storeName": null, "hasTaxCodes": false,
         try {
             // Send all images in a single API call for deduplication
             const imageFiles = state.images.map(img => img.file);
-            result = await extractItemsWithGemini(imageFiles, apiKey);
+            result = await extractItemsFromReceipt(imageFiles);
         } catch (err) {
-            console.error('Gemini API error:', err);
-
-            // If model not found, list available models
-            if (err.message?.includes('not found')) {
-                els.progressText.textContent = 'Model not found. Check console for available models.';
-                listGeminiModels(apiKey);
-            } else {
-                els.progressText.textContent = err.message || 'Error scanning receipt';
-            }
+            console.error('Receipt scanning error:', err);
+            els.progressText.textContent = err.message || 'Error scanning receipt';
 
             els.progressFill.style.width = '0%';
             els.processBtn.querySelector('.btn-text').classList.remove('hidden');
