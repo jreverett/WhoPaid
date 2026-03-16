@@ -12,6 +12,34 @@ function getDb() {
     return db;
 }
 
+let tablesInitialized = false;
+
+async function ensureTables() {
+    if (tablesInitialized) return;
+
+    const client = getDb();
+    await client.execute(`
+        CREATE TABLE IF NOT EXISTS rate_limits (
+            key TEXT PRIMARY KEY,
+            count INTEGER NOT NULL DEFAULT 0,
+            reset_date TEXT NOT NULL
+        )
+    `);
+    await client.execute(`
+        CREATE TABLE IF NOT EXISTS error_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL,
+            ip_address TEXT,
+            error_type TEXT NOT NULL,
+            error_message TEXT,
+            stack_trace TEXT,
+            request_context TEXT,
+            gemini_response TEXT
+        )
+    `);
+    tablesInitialized = true;
+}
+
 export async function handler(event) {
     const headers = {
         'Content-Type': 'application/json',
@@ -43,6 +71,7 @@ export async function handler(event) {
     const action = pathParts[pathParts.length - 1];
 
     try {
+        await ensureTables();
         const client = getDb();
 
         // GET /api/admin/rate-limits - View current rate limits

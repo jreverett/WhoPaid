@@ -16,7 +16,11 @@ function getDb() {
     return db;
 }
 
-async function initDb() {
+let tablesInitialized = false;
+
+async function ensureTables() {
+    if (tablesInitialized) return;
+
     const client = getDb();
     await client.execute(`
         CREATE TABLE IF NOT EXISTS rate_limits (
@@ -37,6 +41,7 @@ async function initDb() {
             gemini_response TEXT
         )
     `);
+    tablesInitialized = true;
 }
 
 async function logError({ ip, errorType, message, stack, context, geminiResponse }) {
@@ -156,7 +161,7 @@ export async function handler(event) {
     const clientIP = getClientIP(event);
 
     try {
-        await initDb();
+        await ensureTables();
 
         // Check global rate limit
         const globalCheck = await checkAndIncrementRateLimit('global', GLOBAL_DAILY_LIMIT);
