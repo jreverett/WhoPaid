@@ -7,6 +7,9 @@
   external_node_modules = ["satori", "@resvg/resvg-js", "@libsql/client"]
   included_files = ["netlify/functions/fonts/**"]
 
+[functions."gemini"]
+  timeout = 26  # Extended timeout for Gemini API calls (max for sync functions)
+
 [[edge_functions]]
   path = "/r/*"
   function = "og-receipt"

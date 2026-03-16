@@ -310,29 +310,54 @@ If you cannot read any items, return: { "storeName": null, "hasTaxCodes": false,
             };
         }
 
-        const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    contents: [
-                        {
-                            parts: [
-                                { text: prompt },
-                                ...imageParts,
-                            ],
-                        },
-                    ],
-                    generationConfig: {
-                        temperature: 0.1,
-                        maxOutputTokens: 8192,
+        // Use AbortController for timeout (20 seconds, leaving buffer for logging)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+        let response;
+        try {
+            response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
                     },
-                }),
+                    signal: controller.signal,
+                    body: JSON.stringify({
+                        contents: [
+                            {
+                                parts: [
+                                    { text: prompt },
+                                    ...imageParts,
+                                ],
+                            },
+                        ],
+                        generationConfig: {
+                            temperature: 0.1,
+                            maxOutputTokens: 8192,
+                        },
+                    }),
+                }
+            );
+        } catch (fetchError) {
+            clearTimeout(timeoutId);
+            if (fetchError.name === 'AbortError') {
+                await logError({
+                    ip: clientIP,
+                    errorType: 'GEMINI_TIMEOUT',
+                    message: 'Gemini API request timed out after 20 seconds',
+                    context: { imageCount: images.length, totalSizeKB: Math.round(bodySizeKB) },
+                });
+                return {
+                    statusCode: 504,
+                    headers,
+                    body: JSON.stringify({ error: getFriendlyError('GEMINI_TIMEOUT') }),
+                };
             }
-        );
+            throw fetchError;
+        }
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
             const errorBody = await response.json().catch(() => ({}));

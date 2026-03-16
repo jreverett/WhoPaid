@@ -435,8 +435,8 @@
     }
 
     // ---- RECEIPT SCANNING API ----
-    const MAX_IMAGE_DIMENSION = 2400; // Max width or height (increased for OCR accuracy)
-    const IMAGE_QUALITY = 0.92; // JPEG quality (increased for text clarity)
+    const MAX_IMAGE_DIMENSION = 2000; // Max width or height (balance of quality vs speed)
+    const IMAGE_QUALITY = 0.88; // JPEG quality (balance of clarity vs size)
     const MAX_FILE_SIZE_KB = 1200; // Target max size per image
 
     // Detect receipt boundaries and return crop coordinates
