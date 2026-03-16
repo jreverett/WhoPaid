@@ -340,9 +340,9 @@ body {
 .receipt-loading {
     text-align: center;
     padding: 3rem 1rem;
-    font-family: var(--font-mono);
-    font-size: 1.1rem;
-    color: var(--ink-light);
+    font-family: var(--font-typewriter);
+    font-size: 1.5rem;
+    color: var(--ink);
 }
 
 .receipt-loading.hidden {
