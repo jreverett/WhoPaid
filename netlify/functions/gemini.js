@@ -160,8 +160,19 @@ export async function handler(event) {
 
     const clientIP = getClientIP(event);
 
+    // Wrap everything in try-catch to ensure errors are always logged
     try {
         await ensureTables();
+    } catch (dbError) {
+        console.error('Database initialization failed:', dbError);
+        return {
+            statusCode: 500,
+            headers,
+            body: JSON.stringify({ error: 'Service temporarily unavailable. Please try again.' }),
+        };
+    }
+
+    try {
 
         // Check global rate limit
         const globalCheck = await checkAndIncrementRateLimit('global', GLOBAL_DAILY_LIMIT);
@@ -402,12 +413,19 @@ If you cannot read any items, return: { "storeName": null, "hasTaxCodes": false,
     } catch (error) {
         console.error('Error:', error);
 
+        // Get request body size for debugging
+        const bodySize = event.body ? event.body.length : 0;
+
         await logError({
             ip: clientIP,
             errorType: 'UNKNOWN',
             message: error.message,
             stack: error.stack,
-            context: { stage: 'handler' },
+            context: {
+                stage: 'handler',
+                bodySize,
+                bodySizeKB: Math.round(bodySize / 1024),
+            },
         });
 
         return {
