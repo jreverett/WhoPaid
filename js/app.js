@@ -1334,13 +1334,13 @@
         const total = personSubtotal + personTax;
         lines.push(`\nTotal: ${formatPrice(total)}`);
 
-        // Add link to full breakdown if we have a receipt ID
+        lines.push('\nCheers!');
+
+        // Add link to full breakdown at the end (bare URL for iMessage preview)
         if (state.receiptId) {
             const baseUrl = window.location.origin;
-            lines.push(`\nView full breakdown: ${baseUrl}/r/${state.receiptId}`);
+            lines.push(`\n${baseUrl}/r/${state.receiptId}`);
         }
-
-        lines.push('\nCheers!');
 
         return lines.join('\n');
     }
