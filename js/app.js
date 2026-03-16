@@ -435,8 +435,8 @@
     }
 
     // ---- RECEIPT SCANNING API ----
-    const MAX_IMAGE_DIMENSION = 2000; // Max width or height (balance of quality vs speed)
-    const IMAGE_QUALITY = 0.88; // JPEG quality (balance of clarity vs size)
+    const MAX_IMAGE_DIMENSION = 2200; // Max width or height
+    const IMAGE_QUALITY = 0.91; // JPEG quality
     const MAX_FILE_SIZE_KB = 1200; // Target max size per image
 
     // Detect receipt boundaries and return crop coordinates
@@ -541,17 +541,28 @@
                     0, 0, outWidth, outHeight     // Destination rectangle
                 );
 
-                // Enhance contrast for better OCR on faded thermal receipts
+                // Enhance image for better OCR on thermal receipts
                 const outputImageData = outputCtx.getImageData(0, 0, outWidth, outHeight);
                 const pixels = outputImageData.data;
-                const contrastFactor = 1.3; // Boost contrast by 30%
+
+                // Mild contrast boost (15%) - enough to help faded text without distorting digits
+                const contrastFactor = 1.15;
                 const midpoint = 128;
 
                 for (let i = 0; i < pixels.length; i += 4) {
-                    // Apply contrast enhancement to RGB channels
-                    pixels[i] = Math.min(255, Math.max(0, midpoint + (pixels[i] - midpoint) * contrastFactor));
-                    pixels[i + 1] = Math.min(255, Math.max(0, midpoint + (pixels[i + 1] - midpoint) * contrastFactor));
-                    pixels[i + 2] = Math.min(255, Math.max(0, midpoint + (pixels[i + 2] - midpoint) * contrastFactor));
+                    let r = pixels[i];
+                    let g = pixels[i + 1];
+                    let b = pixels[i + 2];
+
+                    // Apply contrast
+                    r = midpoint + (r - midpoint) * contrastFactor;
+                    g = midpoint + (g - midpoint) * contrastFactor;
+                    b = midpoint + (b - midpoint) * contrastFactor;
+
+                    // Clamp values
+                    pixels[i] = Math.min(255, Math.max(0, r));
+                    pixels[i + 1] = Math.min(255, Math.max(0, g));
+                    pixels[i + 2] = Math.min(255, Math.max(0, b));
                 }
                 outputCtx.putImageData(outputImageData, 0, 0);
 
