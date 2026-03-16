@@ -56,6 +56,13 @@
                 <span class="btn-loading hidden">Scanning<span class="dots"></span></span>
             </button>
             <div id="ocrProgress" class="ocr-progress hidden">
+                <div id="imagePreview" class="image-preview hidden">
+                    <div class="preview-container">
+                        <img id="previewImage" src="" alt="Processing preview">
+                        <div id="cropOverlay" class="crop-overlay hidden"></div>
+                    </div>
+                    <p id="previewLabel" class="preview-label">Original</p>
+                </div>
                 <div class="progress-bar">
                     <div class="progress-fill" id="progressFill"></div>
                 </div>

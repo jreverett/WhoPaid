@@ -367,6 +367,54 @@ body {
     text-align: center;
 }
 
+/* ---- IMAGE PROCESSING PREVIEW ---- */
+.image-preview {
+    margin-bottom: 1rem;
+    text-align: center;
+}
+
+.preview-container {
+    position: relative;
+    display: inline-block;
+    max-width: 280px;
+    max-height: 200px;
+    overflow: hidden;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+#previewImage {
+    display: block;
+    max-width: 280px;
+    max-height: 200px;
+    object-fit: contain;
+    transition: transform 0.6s ease-in-out, filter 0.4s ease-in-out;
+}
+
+#previewImage.cropping {
+    transform: scale(1.3);
+}
+
+#previewImage.enhanced {
+    filter: contrast(1.15);
+}
+
+.crop-overlay {
+    position: absolute;
+    border: 2px dashed var(--accent);
+    background: rgba(255, 107, 107, 0.1);
+    pointer-events: none;
+    transition: all 0.4s ease-out;
+}
+
+.preview-label {
+    font-family: var(--font-receipt);
+    font-size: 0.85rem;
+    color: var(--ink-light);
+    margin-top: 0.5rem;
+    transition: opacity 0.3s;
+}
+
 /* ---- ITEMS LIST ---- */
 .items-list {
     display: flex;

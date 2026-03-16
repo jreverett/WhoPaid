@@ -43,6 +43,9 @@
         ocrProgress: $('#ocrProgress'),
         progressFill: $('#progressFill'),
         progressText: $('#progressText'),
+        imagePreview: $('#imagePreview'),
+        previewImage: $('#previewImage'),
+        previewLabel: $('#previewLabel'),
         itemsList: $('#itemsList'),
         addItemBtn: $('#addItemBtn'),
         taxRateInput: $('#taxRateInput'),
@@ -490,11 +493,20 @@
         return { x: 0, y: 0, width, height, cropped: false };
     }
 
-    async function compressImage(file) {
+    async function compressImage(file, showPreview = false) {
         return new Promise((resolve, reject) => {
             const img = new Image();
 
-            img.onload = () => {
+            img.onload = async () => {
+                // Show original image in preview
+                if (showPreview) {
+                    els.imagePreview.classList.remove('hidden');
+                    els.previewImage.src = img.src;
+                    els.previewImage.classList.remove('cropping', 'enhanced');
+                    els.previewLabel.textContent = 'Original image';
+                    await sleep(600);
+                }
+
                 // First, draw full image to detect receipt bounds
                 const detectCanvas = document.createElement('canvas');
                 const detectCtx = detectCanvas.getContext('2d');
@@ -541,6 +553,22 @@
                     0, 0, outWidth, outHeight     // Destination rectangle
                 );
 
+                // Show cropping animation
+                if (showPreview && bounds.cropped) {
+                    els.previewLabel.textContent = 'Detecting receipt...';
+                    els.previewImage.classList.add('cropping');
+                    await sleep(700);
+                    // Show cropped result
+                    els.previewImage.src = outputCanvas.toDataURL('image/jpeg', 0.9);
+                    els.previewImage.classList.remove('cropping');
+                    els.previewLabel.textContent = 'Cropped to receipt';
+                    await sleep(500);
+                } else if (showPreview) {
+                    els.previewImage.src = outputCanvas.toDataURL('image/jpeg', 0.9);
+                    els.previewLabel.textContent = 'Receipt detected';
+                    await sleep(400);
+                }
+
                 // Enhance image for better OCR on thermal receipts
                 const outputImageData = outputCtx.getImageData(0, 0, outWidth, outHeight);
                 const pixels = outputImageData.data;
@@ -566,6 +594,16 @@
                 }
                 outputCtx.putImageData(outputImageData, 0, 0);
 
+                // Show contrast enhancement
+                if (showPreview) {
+                    els.previewImage.classList.add('enhanced');
+                    els.previewLabel.textContent = 'Enhancing clarity...';
+                    await sleep(500);
+                    els.previewImage.src = outputCanvas.toDataURL('image/jpeg', IMAGE_QUALITY);
+                    els.previewLabel.textContent = 'Ready for AI';
+                    await sleep(300);
+                }
+
                 // Convert to JPEG with compression
                 const dataUrl = outputCanvas.toDataURL('image/jpeg', IMAGE_QUALITY);
                 const base64 = dataUrl.split(',')[1];
@@ -590,9 +628,24 @@
         });
     }
 
+    function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
     async function extractItemsFromReceipt(imageFiles) {
-        // Compress and convert all images
-        const images = await Promise.all(imageFiles.map(compressImage));
+        // Process first image with preview animation, rest in parallel
+        const images = [];
+        if (imageFiles.length > 0) {
+            // Show preview for first image
+            images.push(await compressImage(imageFiles[0], true));
+            // Process remaining images without preview
+            if (imageFiles.length > 1) {
+                els.previewLabel.textContent = `Processing ${imageFiles.length - 1} more...`;
+                const rest = await Promise.all(imageFiles.slice(1).map(f => compressImage(f, false)));
+                images.push(...rest);
+            }
+            els.previewLabel.textContent = 'Sending to AI...';
+        }
 
         // Check total payload size
         const totalSizeKB = images.reduce((sum, img) => sum + img.data.length * 0.75 / 1024, 0);
@@ -695,6 +748,7 @@
         } catch (err) {
             console.error('Receipt scanning error:', err);
             stopProgressAnimation();
+            els.imagePreview.classList.add('hidden');
             els.progressText.textContent = err.message || 'Error scanning receipt';
 
             els.progressFill.style.width = '0%';
@@ -710,6 +764,7 @@
         }
 
         stopProgressAnimation();
+        els.imagePreview.classList.add('hidden');
         setProgress(100, 'Processing complete!');
 
         const allItems = [];
