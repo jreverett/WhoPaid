@@ -334,27 +334,65 @@
     }
 
     // ---- RECEIPT SCANNING API ----
-    async function fileToBase64(file) {
+    const MAX_IMAGE_DIMENSION = 1600; // Max width or height
+    const IMAGE_QUALITY = 0.85; // JPEG quality
+    const MAX_FILE_SIZE_KB = 800; // Target max size per image
+
+    async function compressImage(file) {
         return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-                // Remove the data URL prefix to get just the base64 data
-                const base64 = reader.result.split(',')[1];
-                resolve(base64);
+            const img = new Image();
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+
+            img.onload = () => {
+                let { width, height } = img;
+
+                // Scale down if needed
+                if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
+                    if (width > height) {
+                        height = Math.round((height * MAX_IMAGE_DIMENSION) / width);
+                        width = MAX_IMAGE_DIMENSION;
+                    } else {
+                        width = Math.round((width * MAX_IMAGE_DIMENSION) / height);
+                        height = MAX_IMAGE_DIMENSION;
+                    }
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                ctx.drawImage(img, 0, 0, width, height);
+
+                // Convert to JPEG with compression
+                const dataUrl = canvas.toDataURL('image/jpeg', IMAGE_QUALITY);
+                const base64 = dataUrl.split(',')[1];
+
+                console.log(`Image compressed: ${Math.round(file.size / 1024)}KB -> ${Math.round(base64.length * 0.75 / 1024)}KB`);
+
+                resolve({
+                    mimeType: 'image/jpeg',
+                    data: base64,
+                });
             };
+
+            img.onerror = () => reject(new Error('Failed to load image'));
+
+            // Load image from file
+            const reader = new FileReader();
+            reader.onload = (e) => { img.src = e.target.result; };
             reader.onerror = reject;
             reader.readAsDataURL(file);
         });
     }
 
     async function extractItemsFromReceipt(imageFiles) {
-        // Convert all images to base64
-        const images = await Promise.all(
-            imageFiles.map(async (file) => ({
-                mimeType: file.type || 'image/jpeg',
-                data: await fileToBase64(file),
-            }))
-        );
+        // Compress and convert all images
+        const images = await Promise.all(imageFiles.map(compressImage));
+
+        // Check total payload size
+        const totalSizeKB = images.reduce((sum, img) => sum + img.data.length * 0.75 / 1024, 0);
+        if (totalSizeKB > 5000) {
+            throw new Error('Images are too large. Please use fewer or smaller images.');
+        }
 
         const response = await fetch('/api/gemini', {
             method: 'POST',
