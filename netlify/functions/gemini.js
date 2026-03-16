@@ -204,8 +204,29 @@ export async function handler(event) {
             };
         }
 
+        // Log request size for debugging
+        const bodySize = event.body ? event.body.length : 0;
+        const bodySizeKB = Math.round(bodySize / 1024);
+        const bodySizeMB = (bodySize / (1024 * 1024)).toFixed(2);
+
         // Parse request body
-        const body = JSON.parse(event.body);
+        let body;
+        try {
+            body = JSON.parse(event.body);
+        } catch (parseError) {
+            await logError({
+                ip: clientIP,
+                errorType: 'PARSE_ERROR',
+                message: `JSON parse failed: ${parseError.message}`,
+                context: { bodySize, bodySizeKB, bodySizeMB, bodyPreview: event.body?.substring(0, 200) },
+            });
+            return {
+                statusCode: 400,
+                headers,
+                body: JSON.stringify({ error: 'Invalid request format' }),
+            };
+        }
+
         const { images } = body;
 
         if (!images || !Array.isArray(images) || images.length === 0) {
@@ -215,6 +236,16 @@ export async function handler(event) {
                 body: JSON.stringify({ error: 'No images provided' }),
             };
         }
+
+        // Log image info for debugging
+        const imageInfo = images.map((img, i) => ({
+            index: i,
+            mimeType: img.mimeType,
+            dataLength: img.data?.length || 0,
+            dataSizeKB: Math.round((img.data?.length || 0) / 1024),
+        }));
+
+        console.log('Processing request:', { bodySizeMB, imageCount: images.length, imageInfo });
 
         // Build the Gemini API request
         const imageParts = images.map(img => ({
