@@ -1061,3 +1061,30 @@ body {
     border-bottom: 1px dashed var(--border);
     padding-bottom: 0.5rem;
 }
+
+/* Receipt Images Section */
+.receipt-images-section {
+    margin-bottom: 1.5rem;
+    text-align: center;
+}
+
+.view-receipt-btn {
+    width: 100%;
+}
+
+.receipt-images-container {
+    margin-top: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.receipt-images-container.hidden {
+    display: none;
+}
+
+.receipt-image {
+    width: 100%;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}

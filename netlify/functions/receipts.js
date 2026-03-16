@@ -1,4 +1,5 @@
 import { createClient } from '@libsql/client';
+import { getStore } from '@netlify/blobs';
 
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -61,9 +62,13 @@ export async function handler(event) {
     try {
         await initDb();
 
-        // Extract ID from path: /api/receipts/:id
+        // Extract ID and action from path: /api/receipts/:id or /api/receipts/:id/images
         const pathParts = event.path.split('/').filter(Boolean);
-        const receiptId = pathParts.length > 2 ? pathParts[pathParts.length - 1] : null;
+        const lastPart = pathParts[pathParts.length - 1];
+        const isImagesRequest = lastPart === 'images';
+        const receiptId = isImagesRequest
+            ? pathParts[pathParts.length - 2]
+            : (pathParts.length > 2 ? lastPart : null);
 
         if (event.httpMethod === 'POST') {
             // Save new receipt
@@ -71,17 +76,74 @@ export async function handler(event) {
             const id = generateUUID();
             const createdAt = Date.now();
 
+            // Extract images from body (don't store in DB)
+            const { images, ...receiptData } = body;
+
             const client = getDb();
             await client.execute({
                 sql: 'INSERT INTO receipts (id, data, created_at) VALUES (?, ?, ?)',
-                args: [id, JSON.stringify(body), createdAt],
+                args: [id, JSON.stringify({ ...receiptData, hasImages: !!images?.length }), createdAt],
             });
+
+            // Store images in Netlify Blobs if provided
+            if (images && images.length > 0) {
+                try {
+                    const store = getStore('receipt-images');
+                    await store.setJSON(id, {
+                        images,
+                        createdAt,
+                    });
+                } catch (blobError) {
+                    console.error('Failed to store images:', blobError);
+                    // Continue without images - receipt is still saved
+                }
+            }
 
             return {
                 statusCode: 201,
                 headers,
                 body: JSON.stringify({ id }),
             };
+        }
+
+        // GET /api/receipts/:id/images - Fetch images for a receipt
+        if (event.httpMethod === 'GET' && receiptId && isImagesRequest) {
+            try {
+                const store = getStore('receipt-images');
+                const data = await store.get(receiptId, { type: 'json' });
+
+                if (!data) {
+                    return {
+                        statusCode: 404,
+                        headers,
+                        body: JSON.stringify({ error: 'No images found for this receipt' }),
+                    };
+                }
+
+                // Check if expired
+                if (Date.now() - data.createdAt > FOURTEEN_DAYS_MS) {
+                    // Clean up expired images
+                    await store.delete(receiptId);
+                    return {
+                        statusCode: 404,
+                        headers,
+                        body: JSON.stringify({ error: 'Images expired' }),
+                    };
+                }
+
+                return {
+                    statusCode: 200,
+                    headers,
+                    body: JSON.stringify({ images: data.images }),
+                };
+            } catch (error) {
+                console.error('Error fetching images:', error);
+                return {
+                    statusCode: 500,
+                    headers,
+                    body: JSON.stringify({ error: 'Failed to fetch images' }),
+                };
+            }
         }
 
         if (event.httpMethod === 'GET' && receiptId) {

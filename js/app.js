@@ -16,6 +16,7 @@
         serviceCharge: null,
         storeName: null,   // extracted from receipt header
         receiptId: null,   // GUID after saving
+        hasImages: false,  // whether receipt has stored images
     };
 
     let itemIdCounter = 0;
@@ -125,7 +126,17 @@
         const firstItem = state.items.find(i => i.name) || { name: 'Receipt' };
         const label = `${firstItem.name.substring(0, 20)} - ${peopleCount} ${peopleCount === 1 ? 'person' : 'people'}`;
 
-        // Prepare state data for saving (exclude images)
+        // Compress images for storage
+        let compressedImages = [];
+        if (state.images.length > 0) {
+            try {
+                compressedImages = await Promise.all(state.images.map(img => compressImage(img.file)));
+            } catch (e) {
+                console.error('Failed to compress images for storage:', e);
+            }
+        }
+
+        // Prepare state data for saving
         const saveData = {
             items: state.items,
             people: state.people,
@@ -134,6 +145,7 @@
             hasTaxCodes: state.hasTaxCodes,
             serviceCharge: state.serviceCharge,
             storeName: state.storeName,
+            images: compressedImages,
         };
 
         try {
@@ -186,6 +198,7 @@
             state.serviceCharge = data.serviceCharge || null;
             state.storeName = data.storeName || null;
             state.receiptId = id;
+            state.hasImages = data.hasImages || false;
 
             // Update counters to avoid ID conflicts
             itemIdCounter = Math.max(0, ...state.items.map(i => i.id));
@@ -199,8 +212,67 @@
         }
     }
 
+    async function loadReceiptImages() {
+        if (!state.receiptId || !state.hasImages) return null;
+
+        try {
+            const response = await fetch(`/api/receipts/${state.receiptId}/images`);
+            if (!response.ok) return null;
+
+            const data = await response.json();
+            return data.images || [];
+        } catch (error) {
+            console.error('Failed to load receipt images:', error);
+            return null;
+        }
+    }
+
     function renderViewOnlySummary() {
         els.viewContent.innerHTML = '';
+
+        // Add "View Receipt" button if images are available
+        if (state.hasImages) {
+            const imageSection = document.createElement('div');
+            imageSection.className = 'receipt-images-section';
+            imageSection.innerHTML = `
+                <button class="btn btn-secondary view-receipt-btn">View Original Receipt</button>
+                <div class="receipt-images-container hidden"></div>
+            `;
+            els.viewContent.appendChild(imageSection);
+
+            const viewBtn = imageSection.querySelector('.view-receipt-btn');
+            const imagesContainer = imageSection.querySelector('.receipt-images-container');
+
+            viewBtn.addEventListener('click', async () => {
+                if (imagesContainer.classList.contains('loaded')) {
+                    // Toggle visibility
+                    imagesContainer.classList.toggle('hidden');
+                    viewBtn.textContent = imagesContainer.classList.contains('hidden')
+                        ? 'View Original Receipt'
+                        : 'Hide Receipt';
+                    return;
+                }
+
+                // Load images
+                viewBtn.textContent = 'Loading...';
+                viewBtn.disabled = true;
+
+                const images = await loadReceiptImages();
+                if (images && images.length > 0) {
+                    imagesContainer.innerHTML = images.map((img, i) => `
+                        <img src="data:${img.mimeType};base64,${img.data}"
+                             alt="Receipt image ${i + 1}"
+                             class="receipt-image">
+                    `).join('');
+                    imagesContainer.classList.add('loaded');
+                    imagesContainer.classList.remove('hidden');
+                    viewBtn.textContent = 'Hide Receipt';
+                } else {
+                    viewBtn.textContent = 'Images unavailable';
+                }
+                viewBtn.disabled = false;
+            });
+        }
 
         // Calculate each person's share
         state.people.forEach((person) => {
