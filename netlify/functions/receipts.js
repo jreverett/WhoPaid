@@ -106,7 +106,7 @@ export async function handler(event) {
     const headers = {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type',
     };
 
@@ -167,6 +167,46 @@ export async function handler(event) {
                 statusCode: 201,
                 headers,
                 body: JSON.stringify({ id }),
+            };
+        }
+
+        // PUT /api/receipts/:id - Update existing receipt (during creation only)
+        if (event.httpMethod === 'PUT' && receiptId) {
+            const body = JSON.parse(event.body);
+            const { images, ...receiptData } = body;
+
+            const client = getDb();
+
+            // Check if receipt exists
+            const existing = await client.execute({
+                sql: 'SELECT created_at FROM receipts WHERE id = ?',
+                args: [receiptId],
+            });
+
+            if (existing.rows.length === 0) {
+                return {
+                    statusCode: 404,
+                    headers,
+                    body: JSON.stringify({ error: 'Receipt not found' }),
+                };
+            }
+
+            // Update the receipt data (preserve original created_at and hasImages flag)
+            const existingData = await client.execute({
+                sql: 'SELECT data FROM receipts WHERE id = ?',
+                args: [receiptId],
+            });
+            const oldData = JSON.parse(existingData.rows[0].data);
+
+            await client.execute({
+                sql: 'UPDATE receipts SET data = ? WHERE id = ?',
+                args: [JSON.stringify({ ...receiptData, hasImages: oldData.hasImages }), receiptId],
+            });
+
+            return {
+                statusCode: 200,
+                headers,
+                body: JSON.stringify({ id: receiptId }),
             };
         }
 

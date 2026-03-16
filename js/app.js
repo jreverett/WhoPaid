@@ -17,6 +17,7 @@
         storeName: null,   // extracted from receipt header
         receiptId: null,   // GUID after saving
         hasImages: false,  // whether receipt has stored images
+        isReadOnly: false, // true if loaded from URL/recent - edits create new receipt
     };
 
     let itemIdCounter = 0;
@@ -121,8 +122,8 @@
     });
 
     async function saveReceipt() {
-        // Don't save again if we already have a receipt ID
-        if (state.receiptId) {
+        // Read-only receipts (loaded from URL/recent) cannot be modified
+        if (state.isReadOnly) {
             return state.receiptId;
         }
 
@@ -130,16 +131,6 @@
         const peopleCount = state.people.length;
         const firstItem = state.items.find(i => i.name) || { name: 'Receipt' };
         const label = `${firstItem.name.substring(0, 20)} - ${peopleCount} ${peopleCount === 1 ? 'person' : 'people'}`;
-
-        // Compress images for storage
-        let compressedImages = [];
-        if (state.images.length > 0) {
-            try {
-                compressedImages = await Promise.all(state.images.map(img => compressImage(img.file)));
-            } catch (e) {
-                console.error('Failed to compress images for storage:', e);
-            }
-        }
 
         // Prepare state data for saving
         const saveData = {
@@ -150,8 +141,41 @@
             hasTaxCodes: state.hasTaxCodes,
             serviceCharge: state.serviceCharge,
             storeName: state.storeName,
-            images: compressedImages,
         };
+
+        // If updating existing receipt during creation, use PUT
+        if (state.receiptId) {
+            try {
+                const response = await fetch(`/api/receipts/${state.receiptId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(saveData),
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to update receipt');
+                }
+
+                // Update recent receipts label
+                addToRecentReceipts(state.receiptId, label);
+
+                return state.receiptId;
+            } catch (error) {
+                console.error('Failed to update receipt:', error);
+                return state.receiptId;
+            }
+        }
+
+        // Creating new receipt - include images
+        let compressedImages = [];
+        if (state.images.length > 0) {
+            try {
+                compressedImages = await Promise.all(state.images.map(img => compressImage(img.file)));
+            } catch (e) {
+                console.error('Failed to compress images for storage:', e);
+            }
+        }
+        saveData.images = compressedImages;
 
         try {
             const response = await fetch('/api/receipts', {
@@ -176,7 +200,6 @@
             return result.id;
         } catch (error) {
             console.error('Failed to save receipt:', error);
-            // Non-blocking - receipt sharing still works without persistence
             return null;
         }
     }
@@ -204,6 +227,7 @@
             state.storeName = data.storeName || null;
             state.receiptId = id;
             state.hasImages = data.hasImages || false;
+            state.isReadOnly = true; // Loaded receipts are read-only; edits create a new receipt
 
             // Update counters to avoid ID conflicts
             itemIdCounter = Math.max(0, ...state.items.map(i => i.id));
