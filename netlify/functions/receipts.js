@@ -1,5 +1,4 @@
 import { createClient } from '@libsql/client';
-import { getStore } from '@netlify/blobs';
 
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -29,6 +28,16 @@ async function ensureTables() {
     `);
     await client.execute(`
         CREATE INDEX IF NOT EXISTS idx_receipts_created_at ON receipts(created_at)
+    `);
+    await client.execute(`
+        CREATE TABLE IF NOT EXISTS receipt_images (
+            receipt_id TEXT PRIMARY KEY,
+            images TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        )
+    `);
+    await client.execute(`
+        CREATE INDEX IF NOT EXISTS idx_receipt_images_created_at ON receipt_images(created_at)
     `);
     await client.execute(`
         CREATE TABLE IF NOT EXISTS error_logs (
@@ -87,6 +96,10 @@ async function cleanupExpired() {
         sql: 'DELETE FROM receipts WHERE created_at < ?',
         args: [cutoff],
     });
+    await client.execute({
+        sql: 'DELETE FROM receipt_images WHERE created_at < ?',
+        args: [cutoff],
+    });
 }
 
 export async function handler(event) {
@@ -130,21 +143,20 @@ export async function handler(event) {
                 args: [id, JSON.stringify({ ...receiptData, hasImages: !!images?.length }), createdAt],
             });
 
-            // Store images in Netlify Blobs if provided
+            // Store images in database if provided
             if (images && images.length > 0) {
                 try {
-                    const store = getStore('receipt-images');
-                    await store.setJSON(id, {
-                        images,
-                        createdAt,
+                    await client.execute({
+                        sql: 'INSERT INTO receipt_images (receipt_id, images, created_at) VALUES (?, ?, ?)',
+                        args: [id, JSON.stringify(images), createdAt],
                     });
-                } catch (blobError) {
-                    console.error('Failed to store images:', blobError);
+                } catch (imgError) {
+                    console.error('Failed to store images:', imgError);
                     await logError({
                         ip: clientIP,
-                        errorType: 'BLOB_STORE_ERROR',
-                        message: blobError.message,
-                        stack: blobError.stack,
+                        errorType: 'IMAGE_STORE_ERROR',
+                        message: imgError.message,
+                        stack: imgError.stack,
                         context: { receiptId: id, action: 'store-images', imageCount: images.length },
                     });
                     // Continue without images - receipt is still saved
@@ -161,10 +173,13 @@ export async function handler(event) {
         // GET /api/receipts/:id/images - Fetch images for a receipt
         if (event.httpMethod === 'GET' && receiptId && isImagesRequest) {
             try {
-                const store = getStore('receipt-images');
-                const data = await store.get(receiptId, { type: 'json' });
+                const client = getDb();
+                const result = await client.execute({
+                    sql: 'SELECT images, created_at FROM receipt_images WHERE receipt_id = ?',
+                    args: [receiptId],
+                });
 
-                if (!data) {
+                if (result.rows.length === 0) {
                     return {
                         statusCode: 404,
                         headers,
@@ -172,10 +187,16 @@ export async function handler(event) {
                     };
                 }
 
+                const row = result.rows[0];
+                const createdAt = Number(row.created_at);
+
                 // Check if expired
-                if (Date.now() - data.createdAt > FOURTEEN_DAYS_MS) {
+                if (Date.now() - createdAt > FOURTEEN_DAYS_MS) {
                     // Clean up expired images
-                    await store.delete(receiptId);
+                    await client.execute({
+                        sql: 'DELETE FROM receipt_images WHERE receipt_id = ?',
+                        args: [receiptId],
+                    });
                     return {
                         statusCode: 404,
                         headers,
@@ -186,13 +207,13 @@ export async function handler(event) {
                 return {
                     statusCode: 200,
                     headers,
-                    body: JSON.stringify({ images: data.images }),
+                    body: JSON.stringify({ images: JSON.parse(row.images) }),
                 };
             } catch (error) {
                 console.error('Error fetching images:', error);
                 await logError({
                     ip: clientIP,
-                    errorType: 'BLOB_FETCH_ERROR',
+                    errorType: 'IMAGE_FETCH_ERROR',
                     message: error.message,
                     stack: error.stack,
                     context: { receiptId, action: 'fetch-images' },
