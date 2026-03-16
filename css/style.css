@@ -356,7 +356,7 @@ body {
     background: var(--accent);
     border-radius: 3px;
     width: 0%;
-    transition: width 0.3s;
+    transition: width 0.15s ease-out;
 }
 
 #progressText {

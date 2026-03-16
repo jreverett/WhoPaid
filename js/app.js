@@ -565,6 +565,55 @@
         return response.json();
     }
 
+    // ---- PROGRESS ANIMATION ----
+    let progressInterval = null;
+    let currentProgress = 0;
+
+    function setProgress(percent, text) {
+        currentProgress = percent;
+        els.progressFill.style.width = `${percent}%`;
+        if (text) els.progressText.textContent = text;
+    }
+
+    function startProgressAnimation(phases) {
+        // phases: [{target: 20, text: 'Compressing...'}, {target: 85, text: 'Analyzing...'}]
+        let phaseIndex = 0;
+        currentProgress = 0;
+        setProgress(0, phases[0].text);
+
+        if (progressInterval) clearInterval(progressInterval);
+
+        progressInterval = setInterval(() => {
+            const phase = phases[phaseIndex];
+            if (!phase) {
+                clearInterval(progressInterval);
+                return;
+            }
+
+            // Slow down as we approach the target (easing)
+            const remaining = phase.target - currentProgress;
+            const increment = Math.max(0.3, remaining * 0.08);
+            currentProgress = Math.min(phase.target, currentProgress + increment);
+
+            els.progressFill.style.width = `${currentProgress}%`;
+
+            // Move to next phase when close enough
+            if (currentProgress >= phase.target - 0.5) {
+                phaseIndex++;
+                if (phases[phaseIndex]) {
+                    els.progressText.textContent = phases[phaseIndex].text;
+                }
+            }
+        }, 100);
+    }
+
+    function stopProgressAnimation() {
+        if (progressInterval) {
+            clearInterval(progressInterval);
+            progressInterval = null;
+        }
+    }
+
     // ---- PROCESS RECEIPTS ----
     els.processBtn.addEventListener('click', async () => {
         if (state.images.length === 0) return;
@@ -576,10 +625,13 @@
         els.ocrProgress.classList.remove('hidden');
 
         const imageCount = state.images.length;
-        els.progressText.textContent = imageCount === 1
-            ? 'Scanning receipt...'
-            : `Scanning ${imageCount} images...`;
-        els.progressFill.style.width = '50%';
+
+        // Start animated progress with phases
+        startProgressAnimation([
+            { target: 15, text: imageCount === 1 ? 'Preparing image...' : `Preparing ${imageCount} images...` },
+            { target: 30, text: 'Uploading...' },
+            { target: 85, text: 'Analyzing receipt...' }
+        ]);
 
         let result;
         try {
@@ -588,6 +640,7 @@
             result = await extractItemsFromReceipt(imageFiles);
         } catch (err) {
             console.error('Receipt scanning error:', err);
+            stopProgressAnimation();
             els.progressText.textContent = err.message || 'Error scanning receipt';
 
             els.progressFill.style.width = '0%';
@@ -602,8 +655,8 @@
             return;
         }
 
-        els.progressFill.style.width = '100%';
-        els.progressText.textContent = 'Processing complete!';
+        stopProgressAnimation();
+        setProgress(100, 'Processing complete!');
 
         const allItems = [];
         result.items.forEach((item) => {
