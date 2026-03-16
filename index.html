@@ -41,6 +41,16 @@
             <div class="receipt-divider">- - - - - - - - - - - - - - - - - - - -</div>
         </header>
 
+        <!-- Loading indicator for shared receipts -->
+        <div id="receipt-loading" class="receipt-loading hidden">
+            <p>Retrieving saved receipt<span class="dots"></span></p>
+        </div>
+        <script>
+            if (/^\/r\/[a-f0-9-]+$/i.test(location.pathname)) {
+                document.getElementById('receipt-loading').classList.remove('hidden');
+            }
+        </script>
+
         <!-- Step 1: Upload -->
         <section id="step-upload" class="step hidden">
             <div class="step-number">STEP 1</div>

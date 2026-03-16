@@ -382,6 +382,10 @@
             const receiptId = match[1];
             const loaded = await loadSharedReceipt(receiptId);
 
+            // Hide loading indicator
+            const loadingEl = document.getElementById('receipt-loading');
+            if (loadingEl) loadingEl.classList.add('hidden');
+
             if (loaded) {
                 renderViewOnlySummary();
                 showStep('step-view');

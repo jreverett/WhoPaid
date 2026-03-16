@@ -336,6 +336,19 @@ body {
     75% { content: '...'; }
 }
 
+/* Receipt loading indicator */
+.receipt-loading {
+    text-align: center;
+    padding: 3rem 1rem;
+    font-family: var(--font-mono);
+    font-size: 1.1rem;
+    color: var(--ink-light);
+}
+
+.receipt-loading.hidden {
+    display: none;
+}
+
 /* ---- PROGRESS BAR ---- */
 .ocr-progress {
     margin-top: 1rem;
