@@ -16,7 +16,11 @@ function getDb() {
     return db;
 }
 
-async function initDb() {
+let tablesInitialized = false;
+
+async function ensureTables() {
+    if (tablesInitialized) return;
+
     const client = getDb();
     await client.execute(`
         CREATE TABLE IF NOT EXISTS rate_limits (
@@ -37,31 +41,11 @@ async function initDb() {
             gemini_response TEXT
         )
     `);
-}
-
-async function ensureErrorTable() {
-    try {
-        const client = getDb();
-        await client.execute(`
-            CREATE TABLE IF NOT EXISTS error_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                created_at TEXT NOT NULL,
-                ip_address TEXT,
-                error_type TEXT NOT NULL,
-                error_message TEXT,
-                stack_trace TEXT,
-                request_context TEXT,
-                gemini_response TEXT
-            )
-        `);
-    } catch (e) {
-        console.error('Failed to create error_logs table:', e);
-    }
+    tablesInitialized = true;
 }
 
 async function logError({ ip, errorType, message, stack, context, geminiResponse }) {
     try {
-        await ensureErrorTable();
         const client = getDb();
         await client.execute({
             sql: `INSERT INTO error_logs (created_at, ip_address, error_type, error_message, stack_trace, request_context, gemini_response)
@@ -177,7 +161,7 @@ export async function handler(event) {
     const clientIP = getClientIP(event);
 
     try {
-        await initDb();
+        await ensureTables();
 
         // Check global rate limit
         const globalCheck = await checkAndIncrementRateLimit('global', GLOBAL_DAILY_LIMIT);

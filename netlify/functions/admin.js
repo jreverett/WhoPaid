@@ -12,7 +12,11 @@ function getDb() {
     return db;
 }
 
+let tablesInitialized = false;
+
 async function ensureTables() {
+    if (tablesInitialized) return;
+
     const client = getDb();
     await client.execute(`
         CREATE TABLE IF NOT EXISTS rate_limits (
@@ -33,6 +37,7 @@ async function ensureTables() {
             gemini_response TEXT
         )
     `);
+    tablesInitialized = true;
 }
 
 export async function handler(event) {
@@ -66,17 +71,8 @@ export async function handler(event) {
     const action = pathParts[pathParts.length - 1];
 
     try {
+        await ensureTables();
         const client = getDb();
-
-        // POST /api/admin/init-db - Initialize database tables
-        if (event.httpMethod === 'POST' && action === 'init-db') {
-            await ensureTables();
-            return {
-                statusCode: 200,
-                headers,
-                body: JSON.stringify({ success: true, message: 'Database tables initialized' }),
-            };
-        }
 
         // GET /api/admin/rate-limits - View current rate limits
         if (event.httpMethod === 'GET' && action === 'rate-limits') {
@@ -90,7 +86,6 @@ export async function handler(event) {
 
         // GET /api/admin/errors - View recent errors
         if (event.httpMethod === 'GET' && action === 'errors') {
-            await ensureTables();
             const limit = parseInt(event.queryStringParameters?.limit) || 50;
             const result = await client.execute({
                 sql: 'SELECT * FROM error_logs ORDER BY created_at DESC LIMIT ?',
