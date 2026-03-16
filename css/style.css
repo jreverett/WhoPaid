@@ -30,6 +30,7 @@
 
 html {
     font-size: 16px;
+    overscroll-behavior: none;
 }
 
 body {
@@ -43,6 +44,7 @@ body {
     display: flex;
     justify-content: center;
     padding: 1rem 0;
+    overscroll-behavior: none;
 }
 
 #app {
@@ -368,51 +370,219 @@ body {
 }
 
 /* ---- IMAGE PROCESSING PREVIEW ---- */
-.image-preview {
-    margin-bottom: 1rem;
+.processing-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(250, 249, 246, 0.97);
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.processing-overlay.active {
+    opacity: 1;
+    visibility: visible;
+}
+
+.processing-content {
     text-align: center;
+    max-width: 90vw;
+    width: 100%;
+}
+
+.preview-stage {
+    font-family: var(--font-receipt);
+    font-size: 0.75rem;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 1rem;
 }
 
 .preview-container {
     position: relative;
     display: inline-block;
-    max-width: 280px;
-    max-height: 200px;
+    max-width: min(400px, 85vw);
+    max-height: 50vh;
     overflow: hidden;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+    background: #fff;
 }
 
 #previewImage {
     display: block;
-    max-width: 280px;
-    max-height: 200px;
+    max-width: min(400px, 85vw);
+    max-height: 50vh;
+    width: auto;
+    height: auto;
     object-fit: contain;
-    transition: transform 0.6s ease-in-out, filter 0.4s ease-in-out;
 }
 
-#previewImage.cropping {
-    transform: scale(1.3);
-}
-
-#previewImage.enhanced {
-    filter: contrast(1.15);
-}
-
-.crop-overlay {
+/* Overlay image for crossfade transitions */
+.preview-overlay-img {
     position: absolute;
-    border: 2px dashed var(--accent);
-    background: rgba(255, 107, 107, 0.1);
+    top: 0;
+    left: 0;
+    display: block;
+    max-width: min(400px, 85vw);
+    max-height: 50vh;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    opacity: 0;
     pointer-events: none;
-    transition: all 0.4s ease-out;
+    transition: opacity 0.5s ease-out;
+}
+
+.preview-overlay-img.visible {
+    opacity: 1;
 }
 
 .preview-label {
     font-family: var(--font-receipt);
+    font-size: 1rem;
+    color: var(--ink);
+    margin-top: 1.5rem;
+    min-height: 1.5em;
+}
+
+.preview-sublabel {
+    font-family: var(--font-receipt);
     font-size: 0.85rem;
     color: var(--ink-light);
     margin-top: 0.5rem;
+    min-height: 1.25em;
+}
+
+/* Size comparison badges */
+.size-comparison {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-top: 1rem;
+    font-family: var(--font-receipt);
+    min-height: 2.5rem;
+}
+
+.size-comparison.hidden {
+    visibility: hidden;
+}
+
+.size-badge {
+    padding: 0.4rem 0.8rem;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    min-width: 5rem;
+    text-align: center;
+}
+
+.size-badge.original {
+    background: var(--ink-faint);
+    color: white;
+    text-decoration: line-through;
+    opacity: 0.7;
+}
+
+.size-badge.compressed {
+    background: var(--accent);
+    color: white;
+    transform: scale(1.1);
+}
+
+.size-arrow {
+    color: var(--ink-light);
+    font-size: 1.2rem;
+}
+
+/* AI sending animation */
+.preview-container.sending {
+    animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+    0%, 100% {
+        box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+    }
+    50% {
+        box-shadow: 0 8px 48px rgba(212, 56, 13, 0.3);
+    }
+}
+
+.sending-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border-radius: 12px;
+    overflow: hidden;
+    opacity: 0;
     transition: opacity 0.3s;
+}
+
+.sending-overlay.active {
+    opacity: 1;
+}
+
+/* Scanner bar effect - horizontal sweep top to bottom */
+.scan-bar {
+    position: absolute;
+    top: -20%;
+    left: 0;
+    right: 0;
+    height: 20%;
+    background: linear-gradient(
+        to bottom,
+        transparent 0%,
+        rgba(212, 56, 13, 0.1) 20%,
+        rgba(212, 56, 13, 0.25) 50%,
+        rgba(212, 56, 13, 0.1) 80%,
+        transparent 100%
+    );
+    animation: scan-sweep 1.8s ease-in-out infinite;
+}
+
+.scan-bar::after {
+    content: '';
+    position: absolute;
+    bottom: 45%;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent), 0 0 16px var(--accent);
+}
+
+@keyframes scan-sweep {
+    0% { top: -20%; }
+    100% { top: 100%; }
+}
+
+.processing-progress {
+    margin-top: 2rem;
+    width: min(300px, 80vw);
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.processing-progress .progress-bar {
+    height: 4px;
+    background: var(--border);
+}
+
+.processing-progress .progress-fill {
+    background: var(--accent);
 }
 
 /* ---- ITEMS LIST ---- */

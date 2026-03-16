@@ -43,9 +43,18 @@
         ocrProgress: $('#ocrProgress'),
         progressFill: $('#progressFill'),
         progressText: $('#progressText'),
-        imagePreview: $('#imagePreview'),
+        processingOverlay: $('#processingOverlay'),
+        previewContainer: $('#previewContainer'),
         previewImage: $('#previewImage'),
+        previewImageOverlay: $('#previewImageOverlay'),
         previewLabel: $('#previewLabel'),
+        previewStage: $('#previewStage'),
+        previewSublabel: $('#previewSublabel'),
+        processingProgressFill: $('#processingProgressFill'),
+        sizeComparison: $('#sizeComparison'),
+        originalSize: $('#originalSize'),
+        compressedSize: $('#compressedSize'),
+        sendingOverlay: $('#sendingOverlay'),
         itemsList: $('#itemsList'),
         addItemBtn: $('#addItemBtn'),
         taxRateInput: $('#taxRateInput'),
@@ -438,9 +447,12 @@
     }
 
     // ---- RECEIPT SCANNING API ----
-    const MAX_IMAGE_DIMENSION = 2200; // Max width or height
-    const IMAGE_QUALITY = 0.91; // JPEG quality
-    const MAX_FILE_SIZE_KB = 1200; // Target max size per image
+    // Image settings - reduced for multiple images to avoid timeout
+    const SINGLE_IMAGE_DIMENSION = 2200;
+    const SINGLE_IMAGE_QUALITY = 0.91;
+    const MULTI_IMAGE_DIMENSION = 1600;  // Smaller for multiple images
+    const MULTI_IMAGE_QUALITY = 0.85;    // Lower quality for multiple images
+    const MAX_FILE_SIZE_KB = 800; // Target max size per image
 
     // Detect receipt boundaries and return crop coordinates
     function detectReceiptBounds(imageData, width, height) {
@@ -493,18 +505,90 @@
         return { x: 0, y: 0, width, height, cropped: false };
     }
 
-    async function compressImage(file, showPreview = false) {
+    // Processing overlay helpers
+    function showProcessingOverlay() {
+        els.processingOverlay.classList.add('active');
+        els.processingProgressFill.style.width = '0%';
+        els.sizeComparison.classList.add('hidden');
+        els.sendingOverlay.classList.remove('active');
+        els.previewContainer.classList.remove('sending');
+        els.previewImageOverlay.classList.remove('visible');
+        els.previewImageOverlay.src = '';
+    }
+
+    function hideProcessingOverlay() {
+        els.processingOverlay.classList.remove('active');
+        els.previewContainer.classList.remove('sending');
+        els.previewImageOverlay.classList.remove('visible');
+        els.sendingOverlay.classList.remove('active');
+    }
+
+    function updateProcessingState(stage, label, sublabel = '', progress = 0) {
+        els.previewStage.textContent = stage;
+        els.previewLabel.textContent = label;
+        els.previewSublabel.textContent = sublabel;
+        els.processingProgressFill.style.width = `${progress}%`;
+    }
+
+    function formatFileSize(bytes) {
+        if (bytes >= 1024 * 1024) {
+            return (bytes / (1024 * 1024)).toFixed(1) + 'MB';
+        }
+        return Math.round(bytes / 1024) + 'KB';
+    }
+
+    async function showSizeComparison(originalBytes, compressedKB) {
+        // Set both to original value BEFORE showing (no 0KB flash)
+        const originalFormatted = formatFileSize(originalBytes);
+        els.originalSize.textContent = originalFormatted;
+        els.compressedSize.textContent = originalFormatted;
+
+        // Now reveal
+        els.sizeComparison.classList.remove('hidden');
+        await sleep(200);
+
+        // Animate counting down from original to compressed
+        const duration = 700;
+        const steps = 20;
+        const originalB = originalBytes;
+        const compressedB = compressedKB * 1024;
+        const diff = originalB - compressedB;
+
+        for (let i = 1; i <= steps; i++) {
+            await sleep(duration / steps);
+            const currentB = Math.round(originalB - (diff * (i / steps)));
+            els.compressedSize.textContent = formatFileSize(currentB);
+        }
+        els.compressedSize.textContent = compressedKB + 'KB';
+    }
+
+    function showSendingAnimation() {
+        els.previewContainer.classList.add('sending');
+        els.sendingOverlay.classList.add('active');
+    }
+
+    async function compressImage(file, imageIndex = 0, totalImages = 1) {
+        const showPreview = imageIndex === 0; // Only show preview for first image
+
+        // Use reduced settings for multiple images to avoid timeout
+        const maxDimension = totalImages > 1 ? MULTI_IMAGE_DIMENSION : SINGLE_IMAGE_DIMENSION;
+        const imageQuality = totalImages > 1 ? MULTI_IMAGE_QUALITY : SINGLE_IMAGE_QUALITY;
+
         return new Promise((resolve, reject) => {
             const img = new Image();
 
             img.onload = async () => {
-                // Show original image in preview
+                // Show original image in overlay
                 if (showPreview) {
-                    els.imagePreview.classList.remove('hidden');
                     els.previewImage.src = img.src;
-                    els.previewImage.classList.remove('cropping', 'enhanced');
-                    els.previewLabel.textContent = 'Original image';
-                    await sleep(600);
+                    els.previewImage.className = ''; // Reset classes
+                    updateProcessingState(
+                        `Image ${imageIndex + 1} of ${totalImages}`,
+                        'Analyzing image...',
+                        `${Math.round(file.size / 1024)}KB original`,
+                        10
+                    );
+                    await sleep(400);
                 }
 
                 // First, draw full image to detect receipt bounds
@@ -531,13 +615,13 @@
                 let outWidth = cropW;
                 let outHeight = cropH;
 
-                if (outWidth > MAX_IMAGE_DIMENSION || outHeight > MAX_IMAGE_DIMENSION) {
+                if (outWidth > maxDimension || outHeight > maxDimension) {
                     if (outWidth > outHeight) {
-                        outHeight = Math.round((outHeight * MAX_IMAGE_DIMENSION) / outWidth);
-                        outWidth = MAX_IMAGE_DIMENSION;
+                        outHeight = Math.round((outHeight * maxDimension) / outWidth);
+                        outWidth = maxDimension;
                     } else {
-                        outWidth = Math.round((outWidth * MAX_IMAGE_DIMENSION) / outHeight);
-                        outHeight = MAX_IMAGE_DIMENSION;
+                        outWidth = Math.round((outWidth * maxDimension) / outHeight);
+                        outHeight = maxDimension;
                     }
                 }
 
@@ -553,28 +637,47 @@
                     0, 0, outWidth, outHeight     // Destination rectangle
                 );
 
-                // Show cropping animation
-                if (showPreview && bounds.cropped) {
-                    els.previewLabel.textContent = 'Detecting receipt...';
-                    els.previewImage.classList.add('cropping');
-                    await sleep(700);
-                    // Show cropped result
-                    els.previewImage.src = outputCanvas.toDataURL('image/jpeg', 0.9);
-                    els.previewImage.classList.remove('cropping');
-                    els.previewLabel.textContent = 'Cropped to receipt';
-                    await sleep(500);
-                } else if (showPreview) {
-                    els.previewImage.src = outputCanvas.toDataURL('image/jpeg', 0.9);
-                    els.previewLabel.textContent = 'Receipt detected';
-                    await sleep(400);
+                // Show cropped result
+                if (showPreview) {
+                    if (bounds.cropped) {
+                        updateProcessingState(
+                            `Image ${imageIndex + 1} of ${totalImages}`,
+                            'Cropping to receipt...',
+                            'Removing background',
+                            25
+                        );
+                        await sleep(400);
+
+                        // Show the actual cropped image
+                        els.previewImage.src = outputCanvas.toDataURL('image/jpeg', 0.9);
+                        updateProcessingState(
+                            `Image ${imageIndex + 1} of ${totalImages}`,
+                            'Receipt isolated',
+                            `Cropped from ${img.width}×${img.height} to ${outWidth}×${outHeight}`,
+                            40
+                        );
+                        await sleep(500);
+                    } else {
+                        els.previewImage.src = outputCanvas.toDataURL('image/jpeg', 0.9);
+                        updateProcessingState(
+                            `Image ${imageIndex + 1} of ${totalImages}`,
+                            'Image ready',
+                            'No cropping needed',
+                            40
+                        );
+                        await sleep(300);
+                    }
                 }
+
+                // Capture BEFORE enhancement for comparison
+                const beforeEnhanceUrl = outputCanvas.toDataURL('image/jpeg', imageQuality);
 
                 // Enhance image for better OCR on thermal receipts
                 const outputImageData = outputCtx.getImageData(0, 0, outWidth, outHeight);
                 const pixels = outputImageData.data;
 
-                // Mild contrast boost (15%) - enough to help faded text without distorting digits
-                const contrastFactor = 1.15;
+                // 35% contrast boost - enhances black text on white paper
+                const contrastFactor = 1.35;
                 const midpoint = 128;
 
                 for (let i = 0; i < pixels.length; i += 4) {
@@ -594,20 +697,49 @@
                 }
                 outputCtx.putImageData(outputImageData, 0, 0);
 
-                // Show contrast enhancement
+                // Get enhanced image
+                const enhancedDataUrl = outputCanvas.toDataURL('image/jpeg', imageQuality);
+
+                // Show crossfade from before to enhanced
                 if (showPreview) {
-                    els.previewImage.classList.add('enhanced');
-                    els.previewLabel.textContent = 'Enhancing clarity...';
-                    await sleep(500);
-                    els.previewImage.src = outputCanvas.toDataURL('image/jpeg', IMAGE_QUALITY);
-                    els.previewLabel.textContent = 'Ready for AI';
+                    // Set up: enhanced underneath, before on top
+                    els.previewImage.src = enhancedDataUrl;
+                    els.previewImageOverlay.src = beforeEnhanceUrl;
+                    els.previewImageOverlay.classList.add('visible');
+
+                    updateProcessingState(
+                        `Image ${imageIndex + 1} of ${totalImages}`,
+                        'Enhancing clarity...',
+                        'Boosting contrast for OCR',
+                        55
+                    );
                     await sleep(300);
+
+                    // Crossfade: fade out the before image to reveal enhanced
+                    els.previewImageOverlay.classList.remove('visible');
+                    await sleep(600);
                 }
 
-                // Convert to JPEG with compression
-                const dataUrl = outputCanvas.toDataURL('image/jpeg', IMAGE_QUALITY);
-                const base64 = dataUrl.split(',')[1];
+                const base64 = enhancedDataUrl.split(',')[1];
                 const outputSizeKB = Math.round(base64.length * 0.75 / 1024);
+
+                if (showPreview) {
+                    // Show size comparison with animated count-up
+                    updateProcessingState(
+                        `Image ${imageIndex + 1} of ${totalImages}`,
+                        'Compressing...',
+                        '',
+                        65
+                    );
+                    await showSizeComparison(file.size, outputSizeKB);
+                    updateProcessingState(
+                        `Image ${imageIndex + 1} of ${totalImages}`,
+                        'Compression complete',
+                        `${Math.round((1 - outputSizeKB * 1024 / file.size) * 100)}% smaller`,
+                        75
+                    );
+                    await sleep(400);
+                }
 
                 console.log(`Image processed: ${Math.round(file.size / 1024)}KB -> ${outputSizeKB}KB` +
                     (bounds.cropped ? ` (cropped to receipt)` : ` (no crop needed)`));
@@ -633,19 +765,25 @@
     }
 
     async function extractItemsFromReceipt(imageFiles) {
-        // Process first image with preview animation, rest in parallel
+        const totalImages = imageFiles.length;
+
+        // Show processing overlay
+        showProcessingOverlay();
+
+        // Process images sequentially for smooth preview
         const images = [];
-        if (imageFiles.length > 0) {
-            // Show preview for first image
-            images.push(await compressImage(imageFiles[0], true));
-            // Process remaining images without preview
-            if (imageFiles.length > 1) {
-                els.previewLabel.textContent = `Processing ${imageFiles.length - 1} more...`;
-                const rest = await Promise.all(imageFiles.slice(1).map(f => compressImage(f, false)));
-                images.push(...rest);
-            }
-            els.previewLabel.textContent = 'Sending to AI...';
+        for (let i = 0; i < imageFiles.length; i++) {
+            images.push(await compressImage(imageFiles[i], i, totalImages));
         }
+
+        // Update to AI phase with sending animation
+        showSendingAnimation();
+        updateProcessingState(
+            'Analyzing',
+            'Sending to AI...',
+            'Reading your receipt',
+            80
+        );
 
         // Check total payload size
         const totalSizeKB = images.reduce((sum, img) => sum + img.data.length * 0.75 / 1024, 0);
@@ -729,16 +867,6 @@
         els.processBtn.querySelector('.btn-text').classList.add('hidden');
         els.processBtn.querySelector('.btn-loading').classList.remove('hidden');
         els.processBtn.disabled = true;
-        els.ocrProgress.classList.remove('hidden');
-
-        const imageCount = state.images.length;
-
-        // Start animated progress with phases
-        startProgressAnimation([
-            { target: 15, text: imageCount === 1 ? 'Preparing image...' : `Preparing ${imageCount} images...` },
-            { target: 30, text: 'Uploading...' },
-            { target: 85, text: 'Analyzing receipt...' }
-        ]);
 
         let result;
         try {
@@ -747,15 +875,18 @@
             result = await extractItemsFromReceipt(imageFiles);
         } catch (err) {
             console.error('Receipt scanning error:', err);
-            stopProgressAnimation();
-            els.imagePreview.classList.add('hidden');
-            els.progressText.textContent = err.message || 'Error scanning receipt';
+            hideProcessingOverlay();
 
+            // Show error in a toast or alert
+            els.ocrProgress.classList.remove('hidden');
+            els.progressText.textContent = err.message || 'Error scanning receipt';
             els.progressFill.style.width = '0%';
+
             els.processBtn.querySelector('.btn-text').classList.remove('hidden');
             els.processBtn.querySelector('.btn-loading').classList.add('hidden');
             els.processBtn.disabled = false;
-            // Keep error visible until user taps progress area
+
+            // Keep error visible until user taps
             els.ocrProgress.onclick = () => {
                 els.ocrProgress.classList.add('hidden');
                 els.ocrProgress.onclick = null;
@@ -763,9 +894,16 @@
             return;
         }
 
-        stopProgressAnimation();
-        els.imagePreview.classList.add('hidden');
-        setProgress(100, 'Processing complete!');
+        // Show success state briefly
+        updateProcessingState(
+            'Complete',
+            'Items extracted!',
+            `Found ${result.items?.length || 0} items`,
+            100
+        );
+        await sleep(600);
+
+        hideProcessingOverlay();
 
         const allItems = [];
         result.items.forEach((item) => {

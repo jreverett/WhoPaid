@@ -56,18 +56,37 @@
                 <span class="btn-loading hidden">Scanning<span class="dots"></span></span>
             </button>
             <div id="ocrProgress" class="ocr-progress hidden">
-                <div id="imagePreview" class="image-preview hidden">
-                    <div class="preview-container">
-                        <img id="previewImage" src="" alt="Processing preview">
-                        <div id="cropOverlay" class="crop-overlay hidden"></div>
-                    </div>
-                    <p id="previewLabel" class="preview-label">Original</p>
-                </div>
                 <div class="progress-bar">
                     <div class="progress-fill" id="progressFill"></div>
                 </div>
                 <p id="progressText">Initialising OCR engine...</p>
             </div>
+
+        <!-- Processing Overlay -->
+        <div id="processingOverlay" class="processing-overlay">
+            <div class="processing-content">
+                <p id="previewStage" class="preview-stage">Step 1 of 3</p>
+                <div id="previewContainer" class="preview-container">
+                    <img id="previewImage" src="" alt="Processing preview">
+                    <img id="previewImageOverlay" src="" alt="" class="preview-overlay-img">
+                    <div id="sendingOverlay" class="sending-overlay">
+                        <div class="scan-bar"></div>
+                    </div>
+                </div>
+                <div id="sizeComparison" class="size-comparison hidden">
+                    <span id="originalSize" class="size-badge original">4.2MB</span>
+                    <span class="size-arrow">→</span>
+                    <span id="compressedSize" class="size-badge compressed">0KB</span>
+                </div>
+                <p id="previewLabel" class="preview-label">Analyzing image...</p>
+                <p id="previewSublabel" class="preview-sublabel"></p>
+                <div class="processing-progress">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="processingProgressFill"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
             <div id="recentReceipts" class="recent-receipts hidden">
                 <h3>Recent Receipts</h3>

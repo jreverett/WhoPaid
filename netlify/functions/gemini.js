@@ -295,12 +295,12 @@ Important:
 
 If you cannot read any items, return: { "storeName": null, "hasTaxCodes": false, "serviceCharge": null, "items": [] }`;
 
-        const apiKey = process.env.GEMINI_API_KEY;
+        const apiKey = process.env.GEMINI_KEY;
         if (!apiKey) {
             await logError({
                 ip: clientIP,
                 errorType: 'CONFIG_ERROR',
-                message: 'GEMINI_API_KEY not configured',
+                message: 'GEMINI_KEY not configured',
                 context: { imageCount: images.length },
             });
             return {
@@ -334,7 +334,7 @@ If you cannot read any items, return: { "storeName": null, "hasTaxCodes": false,
                             },
                         ],
                         generationConfig: {
-                            temperature: 0.1,
+                            temperature: 0,
                             maxOutputTokens: 8192,
                         },
                     }),

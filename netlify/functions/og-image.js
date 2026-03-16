@@ -2,10 +2,7 @@ import { createClient } from '@libsql/client';
 import satori from 'satori';
 import { Resvg } from '@resvg/resvg-js';
 import { readFileSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
+import { join } from 'path';
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 
 // Cache font in memory
@@ -34,10 +31,20 @@ function getDb() {
 }
 
 // Load bundled font (cached in memory after first read)
+// eslint-disable-next-line no-undef
+const __dirname_compat = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
+
 function loadFont() {
     if (!fontData) {
-        const fontPath = join(__dirname, 'fonts', 'CourierPrime-Regular.ttf');
-        fontData = readFileSync(fontPath);
+        // Try __dirname first (CJS), fall back to process.cwd()
+        let fontPath = join(__dirname_compat, 'fonts', 'CourierPrime-Regular.ttf');
+        try {
+            fontData = readFileSync(fontPath);
+        } catch {
+            // Fallback for different environments
+            fontPath = join(process.cwd(), 'netlify/functions/fonts', 'CourierPrime-Regular.ttf');
+            fontData = readFileSync(fontPath);
+        }
     }
     return fontData;
 }
