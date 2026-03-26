@@ -1557,6 +1557,10 @@
             showToast('Could not generate a share link — your message will be sent without one.');
         }
         renderSummary();
+        // Re-enable static group share buttons (summaryContent buttons are recreated by renderSummary)
+        $$('#groupShareSection .btn-share').forEach(btn => {
+            btn.disabled = false;
+        });
     });
 
     els.backToAssign.addEventListener('click', () => {
