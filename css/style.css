@@ -826,6 +826,21 @@ body {
     color: var(--ink-faint);
 }
 
+/* Split All button area */
+.assign-actions {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 1rem;
+}
+
+.assign-actions.hidden {
+    display: none;
+}
+
+.btn-split-all {
+    width: 100%;
+}
+
 .assign-people-buttons {
     display: flex;
     flex-wrap: wrap;
@@ -946,6 +961,33 @@ body {
     color: var(--ink);
 }
 
+/* ---- GROUP SHARE ---- */
+.group-share-section {
+    margin-top: 1.5rem;
+    padding: 1rem;
+    background: var(--tag-bg);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    text-align: center;
+}
+
+.group-share-section.hidden {
+    display: none;
+}
+
+.group-share-header {
+    font-family: var(--font-typewriter);
+    font-size: 1.1rem;
+    color: var(--ink);
+    margin-bottom: 0.75rem;
+}
+
+.group-share-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    flex-wrap: wrap;
+}
 
 /* ---- STEP NAV ---- */
 .step-nav {
