@@ -1474,31 +1474,11 @@
             lines.push(`${pt.person.name} — ${formatPrice(pt.total)}`);
         });
 
-        // Itemized detail section
-        lines.push('\n--- Details ---');
-        peopleTotals.forEach((pt) => {
-            lines.push(`\n${pt.person.name}:`);
-
-            state.items.forEach((item) => {
-                if (!state.assignments[item.id] || !state.assignments[item.id].includes(pt.person.id)) return;
-                const splitCount = state.assignments[item.id].length;
-                const share = item.price / splitCount;
-                let line = `- ${item.name || 'Item'}: ${formatPrice(share)}`;
-                if (splitCount > 1) line += ` (split ${splitCount} ways)`;
-                lines.push(line);
-            });
-
-            if (pt.tax > 0) {
-                lines.push(`- Tax: ${formatPrice(pt.tax)}`);
-            }
-            lines.push(`Total: ${formatPrice(pt.total)}`);
-        });
-
         lines.push('\nCheers!');
 
         if (state.receiptId) {
             const baseUrl = window.location.origin;
-            lines.push(`\n${baseUrl}/r/${state.receiptId}`);
+            lines.push(`\nSee the full breakdown: ${baseUrl}/r/${state.receiptId}`);
         }
 
         return lines.join('\n');
@@ -1566,9 +1546,21 @@
         renderSummary();
         showStep('step-summary');
 
+        // Disable share buttons while receipt is being saved
+        $$('#summaryContent .btn-share, #groupShareSection .btn-share').forEach(btn => {
+            btn.disabled = true;
+        });
+
         // Save receipt to database and re-render to include URL in share messages
-        await saveReceipt();
+        const savedId = await saveReceipt();
+        if (!savedId) {
+            showToast('Could not generate a share link — your message will be sent without one.');
+        }
         renderSummary();
+        // Re-enable static group share buttons (summaryContent buttons are recreated by renderSummary)
+        $$('#groupShareSection .btn-share').forEach(btn => {
+            btn.disabled = false;
+        });
     });
 
     els.backToAssign.addEventListener('click', () => {
