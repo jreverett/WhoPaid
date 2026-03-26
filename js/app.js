@@ -1150,7 +1150,10 @@
 
     // ---- ASSIGNMENTS ----
     function hasAnyAssignments() {
-        return Object.values(state.assignments).some((ids) => ids && ids.length > 0);
+        const activeItemIds = new Set(state.items.map((i) => String(i.id)));
+        return Object.entries(state.assignments).some(
+            ([itemId, ids]) => activeItemIds.has(itemId) && ids && ids.length > 0
+        );
     }
 
     function splitAll() {
