@@ -81,6 +81,14 @@
         clearRecent: $('#clearRecent'),
         // View mode
         viewContent: $('#viewContent'),
+        // Split all
+        assignActions: $('#assignActions'),
+        splitAllBtn: $('#splitAllBtn'),
+        // Group share
+        groupShareSection: $('#groupShareSection'),
+        groupShareWhatsApp: $('#groupShareWhatsApp'),
+        groupShareSMS: $('#groupShareSMS'),
+        groupShareCopy: $('#groupShareCopy'),
     };
 
     // ---- RECEIPT PERSISTENCE ----
@@ -1141,8 +1149,38 @@
     }
 
     // ---- ASSIGNMENTS ----
+    function hasAnyAssignments() {
+        const activeItemIds = new Set(state.items.map((i) => String(i.id)));
+        return Object.entries(state.assignments).some(
+            ([itemId, ids]) => activeItemIds.has(itemId) && ids && ids.length > 0
+        );
+    }
+
+    function splitAll() {
+        if (state.people.length === 0) return;
+
+        if (hasAnyAssignments()) {
+            if (!confirm('This will replace your current assignments and split all items equally between everyone. Continue?')) {
+                return;
+            }
+        }
+
+        const personIds = state.people.map((p) => p.id);
+        state.items.forEach((item) => {
+            if (!item.name && item.price === 0) return;
+            state.assignments[item.id] = [...personIds];
+        });
+
+        renderAssignments();
+    }
+
+    els.splitAllBtn.addEventListener('click', splitAll);
+
     function renderAssignments() {
         els.assignList.innerHTML = '';
+
+        // Show/hide split all button based on whether people exist
+        els.assignActions.classList.toggle('hidden', state.people.length === 0);
 
         if (state.people.length === 0) {
             els.assignList.innerHTML = '<p class="step-desc" style="text-align:center;">Add people above to start assigning items.</p>';
@@ -1304,15 +1342,34 @@
                 sendMessage(personId, channel);
             });
         });
+
+        // Show group share if at least 2 people have items assigned
+        const peopleWithItems = state.people.filter((person) =>
+            state.items.some((item) => state.assignments[item.id] && state.assignments[item.id].includes(person.id))
+        );
+        els.groupShareSection.classList.toggle('hidden', peopleWithItems.length < 2);
     }
 
     // ---- MESSAGE GENERATION ----
+    function getOccasionLabel() {
+        // Service charge implies restaurant/outing, otherwise it's a shop
+        return state.serviceCharge ? 'outing' : 'shop';
+    }
+
+    function getOccasionContext() {
+        const label = getOccasionLabel();
+        if (state.storeName) {
+            return `${label} at ${state.storeName}`;
+        }
+        return label;
+    }
+
     function generateMessage(personId) {
         const person = state.people.find((p) => p.id === personId);
         if (!person) return '';
 
         let lines = [];
-        lines.push(`Hi ${person.name}! Here's your share from our recent shop:\n`);
+        lines.push(`Hi ${person.name}! Here's your share from our recent ${getOccasionContext()}:\n`);
 
         let personSubtotal = 0;
         let personTax = 0;
@@ -1385,6 +1442,101 @@
             }
         }
     }
+
+    // ---- GROUP MESSAGE GENERATION ----
+    function generateGroupMessage() {
+        const lines = [];
+        lines.push(`Here's the breakdown from our recent ${getOccasionContext()}:\n`);
+
+        // Summary section - quick totals per person
+        const peopleTotals = [];
+        state.people.forEach((person) => {
+            let personSubtotal = 0;
+            let personTax = 0;
+            let hasItems = false;
+
+            state.items.forEach((item) => {
+                if (!state.assignments[item.id] || !state.assignments[item.id].includes(person.id)) return;
+                hasItems = true;
+                const splitCount = state.assignments[item.id].length;
+                const share = item.price / splitCount;
+                const shareTax = item.taxCode === 'A' ? share * (state.taxRate / 100) : 0;
+                personSubtotal += share;
+                personTax += shareTax;
+            });
+
+            if (hasItems) {
+                peopleTotals.push({ person, total: personSubtotal + personTax, subtotal: personSubtotal, tax: personTax });
+            }
+        });
+
+        peopleTotals.forEach((pt) => {
+            lines.push(`${pt.person.name} — ${formatPrice(pt.total)}`);
+        });
+
+        // Itemized detail section
+        lines.push('\n--- Details ---');
+        peopleTotals.forEach((pt) => {
+            lines.push(`\n${pt.person.name}:`);
+
+            state.items.forEach((item) => {
+                if (!state.assignments[item.id] || !state.assignments[item.id].includes(pt.person.id)) return;
+                const splitCount = state.assignments[item.id].length;
+                const share = item.price / splitCount;
+                let line = `- ${item.name || 'Item'}: ${formatPrice(share)}`;
+                if (splitCount > 1) line += ` (split ${splitCount} ways)`;
+                lines.push(line);
+            });
+
+            if (pt.tax > 0) {
+                lines.push(`- Tax: ${formatPrice(pt.tax)}`);
+            }
+            lines.push(`Total: ${formatPrice(pt.total)}`);
+        });
+
+        lines.push('\nCheers!');
+
+        if (state.receiptId) {
+            const baseUrl = window.location.origin;
+            lines.push(`\n${baseUrl}/r/${state.receiptId}`);
+        }
+
+        return lines.join('\n');
+    }
+
+    function sendGroupMessage(channel) {
+        const message = generateGroupMessage();
+        const encoded = encodeURIComponent(message);
+
+        switch (channel) {
+            case 'whatsapp':
+                window.open(`https://wa.me/?text=${encoded}`, '_blank');
+                break;
+            case 'sms':
+                window.open(`sms:?body=${encoded}`, '_blank');
+                break;
+            case 'copy': {
+                const showFeedback = (success) => {
+                    const original = els.groupShareCopy.textContent;
+                    els.groupShareCopy.textContent = success ? 'Copied!' : 'Failed';
+                    setTimeout(() => (els.groupShareCopy.textContent = original), 2000);
+                };
+
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(message)
+                        .then(() => showFeedback(true))
+                        .catch(() => fallbackCopy(message, showFeedback));
+                } else {
+                    fallbackCopy(message, showFeedback);
+                }
+                break;
+            }
+        }
+    }
+
+    els.groupShareWhatsApp.addEventListener('click', () => sendGroupMessage('whatsapp'));
+    els.groupShareSMS.addEventListener('click', () => sendGroupMessage('sms'));
+    els.groupShareCopy.addEventListener('click', () => sendGroupMessage('copy'));
 
     // ---- NAVIGATION HANDLERS ----
     els.backToUpload.addEventListener('click', () => showStep('step-upload'));
