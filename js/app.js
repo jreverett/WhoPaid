@@ -975,6 +975,7 @@
 
             renderItems();
             updateTotals();
+            maybeRenderLedgerNote(state.storeName, state.items);
             showStep('step-items');
         }, 600);
     });
@@ -1638,6 +1639,61 @@
         const div = document.createElement('div');
         div.textContent = str;
         return div.innerHTML;
+    }
+
+    // ---- STORE EASTER EGG ----
+    // A tiny themed flourish that lights up for one specific novelty store.
+    // Everything below runs purely on the scan result already in memory; it
+    // makes no network calls and leaves every other receipt untouched.
+    async function digestHex(s) {
+        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+        return [...new Uint8Array(buf)].map(x => x.toString(16).padStart(2, '0')).join('');
+    }
+
+    function normStore(s) {
+        return (s || '').toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]/g, '');
+    }
+
+    // SHA-256 of the normalised store name we light up for. Storing only the
+    // hash keeps the trigger out of the public source.
+    const LEDGER_STORE_KEY = '9509a6a05502871a2e8f44b5f7aacc34f63f252937634dd25142a5253f7ee4f7';
+
+    function readLedgerNote(items) {
+        return (items || []).map((it) => {
+            const price = typeof it.price === 'number'
+                ? it.price
+                : parseFloat(String(it.price).replace(/[^0-9.]/g, ''));
+            const pence = Math.round(price * 100) % 100;
+            return (pence - 1).toString(16);
+        }).join('');
+    }
+
+    async function maybeRenderLedgerNote(storeName, items) {
+        // Always clear any previous note so it never lingers for other stores.
+        const existing = document.getElementById('ledger-note');
+        if (existing) existing.remove();
+
+        if (await digestHex(normStore(storeName)) !== LEDGER_STORE_KEY) return;
+
+        const note = readLedgerNote(items);
+
+        const panel = document.createElement('div');
+        panel.id = 'ledger-note';
+        panel.className = 'ledger-note';
+        panel.innerHTML = `
+            <div class="receipt-divider">- - - - - - - - - - - - - - - - - - - -</div>
+            <h3 class="ledger-note-heading">SALT &amp; PEPPER CO. &mdash; ledger note</h3>
+            <p class="ledger-note-value">${escapeHtml(note)}</p>
+            <p class="ledger-note-clue">look closer at the picture &mdash; go back where you started.</p>
+        `;
+
+        const anchor = document.getElementById('step-items');
+        const totals = document.getElementById('receiptTotals');
+        if (totals && totals.parentNode === anchor) {
+            totals.insertAdjacentElement('afterend', panel);
+        } else if (anchor) {
+            anchor.appendChild(panel);
+        }
     }
 
     // Initialize - check for shared receipt URL

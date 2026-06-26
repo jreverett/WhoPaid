@@ -721,6 +721,44 @@ body {
     color: var(--ink);
 }
 
+/* ---- STORE LEDGER NOTE (novelty store flourish) ---- */
+.ledger-note {
+    margin-top: 1rem;
+    padding: 0.75rem 1rem 1rem;
+    background: var(--accent-light);
+    border: 1px dashed var(--accent);
+    border-radius: 6px;
+    text-align: center;
+}
+
+.ledger-note .receipt-divider {
+    color: var(--accent);
+    margin-top: 0;
+}
+
+.ledger-note-heading {
+    font-family: var(--font-typewriter);
+    font-size: 1rem;
+    letter-spacing: 1px;
+    color: var(--accent);
+    margin: 0.25rem 0 0.5rem;
+}
+
+.ledger-note-value {
+    font-family: var(--font-receipt);
+    font-size: 1.6rem;
+    letter-spacing: 3px;
+    color: var(--ink);
+    word-break: break-all;
+}
+
+.ledger-note-clue {
+    font-family: var(--font-receipt);
+    font-size: 1.1rem;
+    color: var(--ink-light);
+    margin-top: 0.5rem;
+}
+
 /* ---- PEOPLE MANAGER ---- */
 .people-manager {
     margin-bottom: 1.5rem;
